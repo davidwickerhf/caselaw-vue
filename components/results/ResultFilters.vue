@@ -16,7 +16,16 @@ const emit = defineEmits<{
   toggleCollapse: []
 }>()
 
-const expandedSections = ref<Set<string>>(new Set(['sources', 'articles', 'respondentStates', 'years']))
+const expandedSections = ref<Set<string>>(new Set([
+  'sources',
+  'articles',
+  'respondentStates',
+  'documentTypes',
+  'importance',
+  'years',
+  'instances',
+  'domains'
+]))
 
 function toggleSection(section: string) {
   const next = new Set(expandedSections.value)

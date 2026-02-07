@@ -2,8 +2,10 @@
 import { computed } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import Button from '~/components/ui/button/Button.vue'
+import Badge from '~/components/ui/badge/Badge.vue'
 import ResultCard from './ResultCard.vue'
 import type { Citation } from '~/lib/types'
+import { formatDate } from '~/lib/utils/utils'
 
 const props = defineProps<{
   results: Citation[]
@@ -16,6 +18,7 @@ const props = defineProps<{
   estimatedTotalPages?: number
   totalIsExact?: boolean
   disabled?: boolean
+  viewMode?: 'compact' | 'expanded'
 }>()
 
 const emit = defineEmits<{
@@ -54,16 +57,88 @@ const pageLabel = computed(() => {
 <template>
   <div class="flex min-h-full flex-col gap-3">
     <div class="space-y-3">
-      <ResultCard
-        v-for="citation in results"
-        :key="citation.id"
-        :citation="citation"
-        :query="query"
-        :is-selected="selectedResultId === citation.id"
-        :is-checked="selectedIds.has(citation.id)"
-        @click="emit('select', citation)"
-        @toggle="emit('toggle', citation.id)"
-      />
+      <template v-if="viewMode !== 'compact'">
+        <ResultCard
+          v-for="citation in results"
+          :key="citation.id"
+          :citation="citation"
+          :query="query"
+          :is-selected="selectedResultId === citation.id"
+          :is-checked="selectedIds.has(citation.id)"
+          @click="emit('select', citation)"
+          @toggle="emit('toggle', citation.id)"
+        />
+      </template>
+
+      <div v-else class="rounded-xl border border-border/60 bg-card/40 overflow-hidden">
+        <div class="grid grid-cols-[36px_minmax(220px,1fr)_110px_100px_140px_70px] gap-3 border-b border-border/60 bg-muted/30 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div class="text-center">Select</div>
+          <div>Case</div>
+          <div>Date</div>
+          <div>Source</div>
+          <div>Jurisdiction</div>
+          <div class="text-right">Cited</div>
+        </div>
+        <div class="divide-y divide-border/40">
+          <div
+            v-for="citation in results"
+            :key="citation.id"
+            :class="[
+              'grid grid-cols-[36px_minmax(220px,1fr)_110px_100px_140px_70px] gap-3 px-3 py-2 text-xs transition-colors cursor-pointer',
+              selectedResultId === citation.id
+                ? 'bg-primary/5'
+                : 'hover:bg-muted/40'
+            ]"
+            @click="emit('select', citation)"
+          >
+            <div class="flex items-center justify-center">
+              <button
+                :class="[
+                  'flex h-4 w-4 items-center justify-center rounded border transition-colors',
+                  selectedIds.has(citation.id)
+                    ? 'bg-primary border-primary'
+                    : 'border-input hover:border-primary/50'
+                ]"
+                @click.stop="emit('toggle', citation.id)"
+                aria-label="Select case"
+              >
+                <svg
+                  v-if="selectedIds.has(citation.id)"
+                  class="h-3 w-3 text-primary-foreground"
+                  viewBox="0 0 12 12"
+                >
+                  <path d="M10 3L4.5 8.5L2 6" fill="none" stroke="currentColor" stroke-width="2" />
+                </svg>
+              </button>
+            </div>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold text-foreground truncate">
+                {{ citation.title || citation.ecli }}
+              </div>
+              <div class="text-[11px] text-muted-foreground truncate">
+                {{ citation.ecli }}
+              </div>
+            </div>
+            <div class="text-[11px] text-muted-foreground">
+              {{ formatDate(citation.date || citation.date_judgment || citation.date_decision || '') }}
+            </div>
+            <div class="flex items-center">
+              <Badge
+                :variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
+                class="text-[10px]"
+              >
+                {{ citation.source === 'HUDOC' ? 'ECHR' : 'Rechtspraak' }}
+              </Badge>
+            </div>
+            <div class="text-[11px] text-muted-foreground truncate">
+              {{ citation.respondent_state || citation.instance || '—' }}
+            </div>
+            <div class="text-[11px] text-muted-foreground text-right">
+              {{ citation.nCited }}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div v-if="results.length === 0" class="flex flex-col items-center justify-center py-16 text-center">
         <div class="text-4xl mb-3">&#128269;</div>

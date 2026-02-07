@@ -1378,6 +1378,7 @@ function handleFindSimilar(citation: Citation) {
 									:estimated-total-pages="estimatedTotalPages || undefined"
 									:total-is-exact="store.results.value.totalIsExact"
 									:disabled="!store.isFullyLoaded.value"
+									:view-mode="viewMode"
 									@select="handleSelectResult"
 									@toggle="(id) => store.toggleSelection(id)"
 									@page="handlePageChange"
