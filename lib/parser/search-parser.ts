@@ -1,0 +1,109 @@
+import { recognizeKeywords } from './recognizers/keyword-recognizer';
+import { recognizeArticles } from './recognizers/article-recognizer';
+import { recognizeStates } from './recognizers/state-recognizer';
+import { recognizeSources } from './recognizers/source-recognizer';
+import { recognizeMetadata } from './recognizers/metadata-recognizer';
+import { recognizeDates } from './recognizers/date-recognizer';
+import type { ParseResult, ParsedToken, ParseSuggestion } from '~/lib/types';
+
+/**
+ * Mask consumed spans in the input by replacing them with spaces.
+ * All spans reference positions in the original input.
+ */
+function maskSpans(input: string, spans: [number, number][]): string {
+    const chars = input.split('');
+    for (const [start, end] of spans) {
+        for (let i = start; i < end && i < chars.length; i++) {
+            chars[i] = ' ';
+        }
+    }
+    return chars.join('');
+}
+
+/**
+ * Remove consumed spans from input and clean up whitespace.
+ */
+function removeSpans(input: string, spans: [number, number][]): string {
+    const sorted = [...spans].sort((a, b) => b[0] - a[0]);
+    let result = input;
+    for (const [start, end] of sorted) {
+        result = result.slice(0, start) + result.slice(end);
+    }
+    return result.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Parse search input text and extract structured tokens + suggestions.
+ *
+ * Runs recognizers in priority order:
+ * 1. Keywords (quoted phrases)
+ * 2. Articles (most complex, highest priority)
+ * 3. States (multi-word country names)
+ * 4. Sources (ECHR/Rechtspraak)
+ * 5. Metadata (doc types, importance, instances, domains)
+ * 6. Dates (years, ranges)
+ *
+ * Each recognizer receives a masked version of the input where
+ * previously consumed spans are replaced with spaces.
+ */
+export function parseSearchInput(input: string): ParseResult {
+    const allTokens: ParsedToken[] = [];
+    const allSuggestions: ParseSuggestion[] = [];
+    const allConsumed: [number, number][] = [];
+
+    // 1. Keywords (quoted phrases)
+    const keywords = recognizeKeywords(input);
+    allTokens.push(...keywords.tokens);
+    allSuggestions.push(...keywords.suggestions);
+    allConsumed.push(...keywords.consumed);
+
+    // 2. Articles
+    let masked = maskSpans(input, allConsumed);
+    const articles = recognizeArticles(masked);
+    allTokens.push(...articles.tokens);
+    allSuggestions.push(...articles.suggestions);
+    allConsumed.push(...articles.consumed);
+
+    // 3. States (on masked input)
+    masked = maskSpans(input, allConsumed);
+    const states = recognizeStates(masked);
+    allTokens.push(...states.tokens);
+    allSuggestions.push(...states.suggestions);
+    allConsumed.push(...states.consumed);
+
+    // 4. Sources
+    masked = maskSpans(input, allConsumed);
+    const sources = recognizeSources(masked);
+    allTokens.push(...sources.tokens);
+    allSuggestions.push(...sources.suggestions);
+    allConsumed.push(...sources.consumed);
+
+    // 5. Metadata
+    masked = maskSpans(input, allConsumed);
+    const metadata = recognizeMetadata(masked);
+    allTokens.push(...metadata.tokens);
+    allSuggestions.push(...metadata.suggestions);
+    allConsumed.push(...metadata.consumed);
+
+    // 6. Dates
+    masked = maskSpans(input, allConsumed);
+    const dates = recognizeDates(masked);
+    allTokens.push(...dates.tokens);
+    allSuggestions.push(...dates.suggestions);
+    allConsumed.push(...dates.consumed);
+
+    // Remaining text: keep original input (no auto-consumption)
+    const remainingText = input;
+
+    allSuggestions.sort((a, b) =>
+        a.triggerStart === b.triggerStart
+            ? a.triggerEnd - b.triggerEnd
+            : a.triggerStart - b.triggerStart
+    );
+
+    return {
+        tokens: allTokens,
+        suggestions: allSuggestions,
+        remainingText,
+    };
+}
