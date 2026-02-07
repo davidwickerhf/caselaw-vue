@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Scale, ArrowRight, Moon, Sun, Search } from 'lucide-vue-next'
-import Button from '~/components/ui/button/Button.vue'
+import { Scale, ArrowRight, Search } from 'lucide-vue-next'
 import SmartSearchBar from '~/components/search/SmartSearchBar.vue'
 import QueryBuilder from '~/components/search/QueryBuilder.vue'
 import SearchHistory from '~/components/shared/SearchHistory.vue'
+import AppHeader from '~/components/shared/AppHeader.vue'
+import AppFooter from '~/components/shared/AppFooter.vue'
 import { useSmartSearch } from '~/composables/useSmartSearch'
 import { queryBuilderGroupToSearchQuery } from '~/lib/utils/search-query'
 import { queryBuilderGroupToParams, paramsToQueryBuilderState } from '~/lib/utils/query-builder-url'
+import { parseNaturalLanguageToQueryBuilderGroup } from '~/lib/parser/nl-query-parser'
 import { useSearch } from '~/composables/useSearch'
-import { useHistory } from '~/composables/useHistory'
-
-const colorMode = useColorMode()
+import { useHistory, type HistoryEntry } from '~/composables/useHistory'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,13 +38,13 @@ function navigateToResults() {
     return
   }
   submitError.value = null
-  store.setQuery(parsed.query)
-  history.add(parsed.query, undefined)
+  store.setQuery({ ...parsed.query, queryBuilderGroup: smartSearch.queryBuilderGroup.value })
   const includeSearchString = smartSearch.lastEditSource.value === 'searchbar' && !!smartSearch.searchString.value
+  const rawSearchText = includeSearchString ? smartSearch.searchString.value : ''
+  history.add(parsed.query, undefined, rawSearchText)
   const params = queryBuilderGroupToParams(smartSearch.queryBuilderGroup.value, {
     pageSize: parsed.query.pageSize,
-    echrCursor: parsed.query.echrCursor,
-    rsCursor: parsed.query.rsCursor,
+    cursor: parsed.query.cursor,
     searchString: includeSearchString ? smartSearch.searchString.value : undefined
   })
   router.push({ path: '/results', query: Object.fromEntries(params.entries()) })
@@ -64,16 +64,24 @@ function handleExampleSearch(text: string) {
   navigateToResults()
 }
 
-function handleHistorySelect(text: string) {
-  smartSearch.setFromText(text)
-  navigateToResults()
-}
-
-function toggleDarkMode() {
-  colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark'
+function handleHistorySelect(entry: HistoryEntry) {
+  const entryText = entry?.text?.trim()
+  if (entryText) {
+    smartSearch.setFromText(entryText)
+    navigateToResults()
+    return
+  }
+  if (entry?.query) {
+    smartSearch.setFromSearchQuery(entry.query)
+    navigateToResults()
+  }
 }
 
 onMounted(() => {
+  store.resetQuery()
+  smartSearch.clearAll()
+  submitError.value = null
+
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(route.query)) {
     if (Array.isArray(value)) params.set(key, value.join(','))
@@ -83,6 +91,22 @@ onMounted(() => {
 
   const parsed = paramsToQueryBuilderState(params)
   if (!parsed.state) {
+    const searchString = params.get('searchString')
+    if (searchString) {
+      const group = parseNaturalLanguageToQueryBuilderGroup(searchString)
+      const result = queryBuilderGroupToSearchQuery(group)
+      if (!result.query) {
+        submitError.value = result.error || 'Unable to parse query builder.'
+        return
+      }
+      smartSearch.setFromText(searchString)
+      smartSearch.setSearchString(searchString)
+      smartSearch.queryBuilderGroup.value = group
+      smartSearch.lastEditSource.value = 'searchbar'
+      store.setQuery({ ...result.query, queryBuilderGroup: group })
+      submitError.value = null
+      return
+    }
     submitError.value = parsed.error || 'Invalid URL parameters.'
     return
   }
@@ -97,45 +121,27 @@ onMounted(() => {
   const nextQuery = {
     ...result.query,
     pageSize: parsed.state.pageSize || result.query.pageSize,
-    echrCursor: parsed.state.echrCursor,
-    rsCursor: parsed.state.rsCursor
+    cursor: parsed.state.cursor
   }
 
   if (parsed.state.searchString) {
     smartSearch.setFromText(parsed.state.searchString)
-    smartSearch.onQueryBuilderEdit(group)
     smartSearch.setSearchString(parsed.state.searchString)
+    smartSearch.queryBuilderGroup.value = group
+    smartSearch.lastEditSource.value = 'searchbar'
   } else {
-    smartSearch.setFromSearchQuery(nextQuery)
+    smartSearch.setFromText('')
     smartSearch.onQueryBuilderEdit(group)
+    smartSearch.setSearchString('')
   }
-  store.setQuery(nextQuery)
+  store.setQuery({ ...nextQuery, queryBuilderGroup: group })
   submitError.value = null
 })
 </script>
 
 <template>
   <div class="h-screen overflow-hidden bg-gradient-to-b from-background via-background to-muted/30">
-    <!-- Fixed top bar -->
-    <header class="fixed top-0 inset-x-0 z-40 border-b border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-      <div class="mx-auto flex h-14 max-w-screen-2xl items-center justify-between px-6">
-        <div class="flex items-center gap-2">
-          <div
-            class="inline-flex items-center gap-2 overflow-hidden whitespace-nowrap transition-all duration-200 ease-out"
-            :class="showCompactLogo ? 'max-w-[220px] opacity-100 translate-y-0' : 'max-w-0 opacity-0 -translate-y-1 pointer-events-none'"
-          >
-            <div class="inline-flex items-center justify-center rounded-2xl bg-primary/5 p-2">
-              <Scale class="h-4 w-4 text-primary" />
-            </div>
-            <span class="text-sm font-semibold text-foreground">LegalSearch</span>
-          </div>
-        </div>
-        <Button variant="ghost" size="icon" class="h-9 w-9 rounded-full" @click="toggleDarkMode">
-          <Sun v-if="colorMode === 'dark'" class="h-4 w-4" />
-          <Moon v-else class="h-4 w-4" />
-        </Button>
-      </div>
-    </header>
+    <AppHeader fixed />
 
     <!-- Scrollable middle -->
     <main class="h-full overflow-y-auto px-6 pt-20 pb-20">
@@ -162,6 +168,7 @@ onMounted(() => {
             :loading="store.loading.value"
             size="large"
             autofocus
+            :chips="false"
             @submit="handleSubmit"
             @clear="handleClear"
           />
@@ -201,13 +208,6 @@ onMounted(() => {
       </div>
     </main>
 
-    <!-- Fixed footer -->
-    <footer class="fixed bottom-0 inset-x-0 z-30 border-t border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-      <div class="py-4 text-center">
-        <p class="text-xs text-muted-foreground/50">
-          ECHR &middot; Rechtspraak &middot; Case Law Search Engine
-        </p>
-      </div>
-    </footer>
+    <AppFooter />
   </div>
 </template>

@@ -1,15 +1,26 @@
 import { RESPONDENT_STATES, RESPONDENT_STATE_ALIASES } from '~/lib/utils/constants';
 import type { ParsedToken, ParseSuggestion } from '~/lib/types';
 
+function normalizeText(text: string): string {
+    return text
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+}
+
 // Build combined list: full names + aliases, sorted longest-first
-const ALL_NAMES: { pattern: string; canonical: string; isAlias: boolean }[] = [
-    ...RESPONDENT_STATES.map((s) => ({ pattern: s.toLowerCase(), canonical: s, isAlias: false })),
+const ALL_NAMES: { pattern: string; normalized: string; canonical: string }[] = [
+    ...RESPONDENT_STATES.map((s) => ({
+        pattern: s.toLowerCase(),
+        normalized: normalizeText(s),
+        canonical: s
+    })),
     ...Object.entries(RESPONDENT_STATE_ALIASES).map(([alias, canonical]) => ({
         pattern: alias.toLowerCase(),
-        canonical,
-        isAlias: true,
+        normalized: normalizeText(alias),
+        canonical
     })),
-].sort((a, b) => b.pattern.length - a.pattern.length);
+].sort((a, b) => b.normalized.length - a.normalized.length);
 
 function genId(): string {
     return Math.random().toString(36).slice(2, 10);
@@ -25,16 +36,16 @@ export function recognizeStates(input: string): StateRecognizerResult {
     const tokens: ParsedToken[] = [];
     const suggestions: ParseSuggestion[] = [];
     const consumed: [number, number][] = [];
-    const lowerInput = input.toLowerCase();
+    const normalizedInput = normalizeText(input);
 
-    for (const { pattern, canonical, isAlias } of ALL_NAMES) {
+    for (const { normalized, canonical } of ALL_NAMES) {
         let searchFrom = 0;
         while (true) {
-            const idx = lowerInput.indexOf(pattern, searchFrom);
+            const idx = normalizedInput.indexOf(normalized, searchFrom);
             if (idx === -1) break;
 
             const start = idx;
-            const end = idx + pattern.length;
+            const end = idx + normalized.length;
 
             // Word boundary check
             if (start > 0 && /\w/.test(input[start - 1])) {

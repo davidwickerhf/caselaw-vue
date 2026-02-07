@@ -24,8 +24,7 @@ type UrlPayload = {
 export type QueryBuilderUrlState = {
     group: QueryBuilderGroup;
     pageSize?: number;
-    echrCursor?: string;
-    rsCursor?: string;
+    cursor?: string;
     searchString?: string;
 };
 
@@ -107,7 +106,7 @@ function buildGroupFromPayload(payload: UrlPayload): QueryBuilderGroup {
 
 export function queryBuilderGroupToParams(
     group: QueryBuilderGroup,
-    opts: { pageSize?: number; echrCursor?: string; rsCursor?: string; searchString?: string } = {}
+    opts: { pageSize?: number; cursor?: string; searchString?: string } = {}
 ): URLSearchParams {
     const params = new URLSearchParams();
     const payload = serializeGroup(group);
@@ -115,8 +114,7 @@ export function queryBuilderGroupToParams(
 
     const defaults = createDefaultSearchQuery();
     if (opts.pageSize && opts.pageSize !== defaults.pageSize) params.set('pageSize', String(opts.pageSize));
-    if (opts.echrCursor) params.set('echrCursor', opts.echrCursor);
-    if (opts.rsCursor) params.set('rsCursor', opts.rsCursor);
+    if (opts.cursor) params.set('cursor', opts.cursor);
     if (opts.searchString) params.set('searchString', opts.searchString);
 
     return params;
@@ -138,15 +136,14 @@ export function paramsToQueryBuilderState(params: URLSearchParams): { state?: Qu
 
         const group = buildGroupFromPayload(payload);
         const pageSize = params.get('pageSize');
-        const echrCursor = params.get('echrCursor') || undefined;
-        const rsCursor = params.get('rsCursor') || undefined;
+        const cursor = params.get('cursor') || params.get('echrCursor') || params.get('rsCursor') || undefined;
         const searchString = params.get('searchString') || undefined;
         if (pageSize) {
             const num = Number(pageSize);
             if (!Number.isInteger(num) || num < 1) return { error: 'Invalid pageSize value.' };
-            return { state: { group, pageSize: num, echrCursor, rsCursor, searchString } };
+            return { state: { group, pageSize: num, cursor, searchString } };
         }
-        return { state: { group, echrCursor, rsCursor, searchString } };
+        return { state: { group, cursor, searchString } };
     }
 
     // Fallback to legacy params (ignore free-text query)
@@ -157,12 +154,12 @@ export function paramsToQueryBuilderState(params: URLSearchParams): { state?: Qu
     legacy.query.scoped.rs.text = '';
     const group = searchQueryToQueryBuilderGroup(legacy.query);
     const searchString = params.get('searchString') || undefined;
+    const cursor = params.get('cursor') || params.get('echrCursor') || params.get('rsCursor') || undefined;
     return {
         state: {
             group,
             pageSize: legacy.query.pageSize,
-            echrCursor: legacy.query.echrCursor,
-            rsCursor: legacy.query.rsCursor,
+            cursor: cursor || legacy.query.cursor,
             searchString
         }
     };

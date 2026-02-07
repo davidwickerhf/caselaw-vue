@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Clock, Sparkles, Scale, MapPin, Calendar, FileText, Tag } from 'lucide-vue-next'
+import { Sparkles, Scale, MapPin, Calendar, FileText, Tag } from 'lucide-vue-next'
 
 interface Suggestion {
   id: string
@@ -11,7 +11,7 @@ interface Suggestion {
 
 const props = defineProps<{
   suggestions: Suggestion[]
-  recentSearches: string[]
+  examples: string[]
   visible: boolean
   activeIndex: number
 }>()
@@ -19,10 +19,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   selectSuggestion: [id: string]
   rejectSuggestion: [id: string]
-  selectRecent: [text: string]
+  selectExample: [text: string]
 }>()
-
-const recentCount = computed(() => Math.min(props.recentSearches.length, 3))
+const showExamples = computed(() => props.suggestions.length === 0 && props.examples.length > 0)
 
 function suggestionIcon(type: string) {
   if (type === 'article') return Scale
@@ -44,7 +43,7 @@ function suggestionIcon(type: string) {
     leave-to-class="opacity-0 translate-y-1 scale-[0.98]"
   >
     <div
-      v-if="visible && (suggestions.length > 0 || recentSearches.length > 0)"
+      v-if="visible && (suggestions.length > 0 || examples.length > 0)"
       class="absolute top-full left-0 right-0 z-50 mt-2 overflow-hidden rounded-xl border border-border/60 bg-popover/95 backdrop-blur-xl shadow-xl shadow-black/[0.08] dark:shadow-black/30"
     >
       <template v-if="suggestions.length > 0">
@@ -77,23 +76,21 @@ function suggestionIcon(type: string) {
           </div>
         </button>
       </template>
-      <template v-if="recentSearches.length > 0">
-        <div :class="['px-3.5 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60', suggestions.length > 0 ? 'border-t border-border/40' : '']">
-          Recent
-        </div>
+      <template v-if="showExamples">
+        <div class="px-3.5 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Try a search</div>
         <button
-          v-for="(recent, i) in recentSearches.slice(0, 3)"
-          :key="'recent-' + i"
+          v-for="(example, i) in examples"
+          :key="'example-' + i"
           :class="[
             'flex w-full items-center gap-3 px-3.5 py-2.5 text-sm text-left transition-colors',
-            activeIndex === suggestions.length + i ? 'bg-accent/70' : 'hover:bg-accent/40',
+            activeIndex === i ? 'bg-accent/70' : 'hover:bg-accent/40',
           ]"
-          @mousedown.prevent="emit('selectRecent', recent)"
+          @mousedown.prevent="emit('selectExample', example)"
         >
           <div class="flex items-center justify-center h-7 w-7 rounded-lg bg-muted/60 shrink-0">
-            <Clock class="h-3.5 w-3.5 text-muted-foreground/60" />
+            <Sparkles class="h-3.5 w-3.5 text-muted-foreground/60" />
           </div>
-          <span class="truncate text-foreground/80">{{ recent }}</span>
+          <span class="truncate text-foreground/80">{{ example }}</span>
         </button>
       </template>
       <div class="h-1" />

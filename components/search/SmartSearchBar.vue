@@ -3,18 +3,20 @@ import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { Sparkles, X, Loader2, Search } from 'lucide-vue-next'
 import SearchSuggestions from './SearchSuggestions.vue'
 import { useSmartSearch } from '~/composables/useSmartSearch'
-import { useHistory } from '~/composables/useHistory'
 import type { ParsedToken } from '~/lib/types'
 import { smartSearchChipClasses } from '~/lib/utils/smart-search-chip'
+import { SEARCH_EXAMPLES } from '~/lib/utils/search-examples'
 
 const props = withDefaults(defineProps<{
   loading?: boolean
   size?: 'default' | 'large'
   autofocus?: boolean
+  chips?: boolean
 }>(), {
   loading: false,
   size: 'default',
   autofocus: false,
+  chips: true,
 })
 
 const emit = defineEmits<{
@@ -23,7 +25,6 @@ const emit = defineEmits<{
 }>()
 
 const smartSearch = useSmartSearch()
-const { recentTexts } = useHistory()
 
 type EditorSegment =
   | { id: string; kind: 'text'; value: string }
@@ -47,6 +48,20 @@ onClickOutside(containerEl, () => {
 })
 
 const topSuggestion = computed(() => smartSearch.suggestions.value[0] ?? null)
+const hasParsedParameters = computed(() => smartSearch.allSuggestions.value.length > 0)
+
+function normalizeExampleQuery(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+const exampleSuggestions = computed(() => {
+  const query = normalizeExampleQuery(smartSearch.rawText.value)
+  const pool = SEARCH_EXAMPLES
+  const matches = query
+    ? pool.filter((item) => normalizeExampleQuery(item).includes(query))
+    : pool
+  return matches.slice(0, 6)
+})
 
 function genSegId() {
   return Math.random().toString(36).slice(2, 10)
@@ -97,7 +112,9 @@ function renderEditorFromSegments(segments: EditorSegment[]) {
     if (segment.kind === 'text') {
       if (segment.value) editorEl.value.append(document.createTextNode(segment.value))
     } else {
-      editorEl.value.append(createTokenNode(segment.token))
+      if (props.chips) {
+        editorEl.value.append(createTokenNode(segment.token))
+      }
     }
   }
 
@@ -169,7 +186,7 @@ function handleInput() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Backspace') {
+  if (props.chips && e.key === 'Backspace') {
     const selection = window.getSelection()
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0)
@@ -200,8 +217,9 @@ function handleKeydown(e: KeyboardEvent) {
     }
   }
 
-  const totalSuggestions = (smartSearch.suggestions.value.length > 0 ? smartSearch.suggestions.value.length : 0)
-    + Math.min(recentTexts.value.length, 3)
+  const totalSuggestions = showParsedSuggestions.value
+    ? smartSearch.suggestions.value.length
+    : (showExampleSuggestions.value ? exampleSuggestions.value.length : 0)
   if (e.key === 'ArrowDown') {
     e.preventDefault()
     activeIndex.value = Math.min(activeIndex.value + 1, totalSuggestions - 1)
@@ -211,13 +229,13 @@ function handleKeydown(e: KeyboardEvent) {
   } else if (e.key === 'Enter') {
     e.preventDefault()
     if (activeIndex.value >= 0) {
-      const parserSuggestionCount = smartSearch.suggestions.value.length
-      if (activeIndex.value < parserSuggestionCount) {
-        smartSearch.acceptSuggestion(smartSearch.suggestions.value[activeIndex.value].id)
+      if (showParsedSuggestions.value) {
+        const id = smartSearch.suggestions.value[activeIndex.value].id
+        if (props.chips) smartSearch.acceptSuggestion(id)
+        else smartSearch.acceptSuggestionSoft(id)
         nextTick(() => editorEl.value?.focus())
-      } else {
-        const recentIdx = activeIndex.value - parserSuggestionCount
-        selectHistoryItem(recentTexts.value[recentIdx])
+      } else if (showExampleSuggestions.value) {
+        selectExampleItem(exampleSuggestions.value[activeIndex.value])
       }
     } else {
       submit()
@@ -227,7 +245,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-function selectHistoryItem(text: string) {
+function selectExampleItem(text: string) {
   smartSearch.setFromText(text)
   showSuggestions.value = false
   nextTick(() => editorEl.value?.focus())
@@ -235,7 +253,8 @@ function selectHistoryItem(text: string) {
 
 function submit() {
   smartSearch.setSearchString(smartSearch.rawText.value || '')
-  smartSearch.acceptAllSuggestions()
+  if (props.chips) smartSearch.acceptAllSuggestions()
+  else smartSearch.acceptAllSuggestionsSoft()
   showSuggestions.value = false
   emit('submit')
 }
@@ -247,7 +266,8 @@ function clear() {
 }
 
 function onSuggestionSelect(id: string) {
-  smartSearch.acceptSuggestion(id)
+  if (props.chips) smartSearch.acceptSuggestion(id)
+  else smartSearch.acceptSuggestionSoft(id)
   nextTick(() => editorEl.value?.focus())
 }
 
@@ -283,6 +303,13 @@ const dropdownSuggestions = computed(() => {
   }))
 })
 
+const showParsedSuggestions = computed(
+  () => showSuggestions.value && smartSearch.suggestions.value.length > 0
+)
+const showExampleSuggestions = computed(
+  () => showSuggestions.value && !hasParsedParameters.value && exampleSuggestions.value.length > 0
+)
+
 function suggestionTypeFromToken(token: ParsedToken) {
   if (token.type.startsWith('article')) return 'article'
   if (token.type === 'respondent_state') return 'state'
@@ -292,6 +319,7 @@ function suggestionTypeFromToken(token: ParsedToken) {
 }
 
 function handleEditorClick(event: MouseEvent) {
+  if (!props.chips) return
   const target = event.target as HTMLElement | null
   const removeButton = target?.closest('[data-remove-token]') as HTMLElement | null
   if (removeButton?.dataset.removeToken) {
@@ -382,12 +410,12 @@ watch(
     <!-- Suggestions dropdown -->
     <SearchSuggestions
       :suggestions="dropdownSuggestions"
-      :recent-searches="recentTexts"
-      :visible="showSuggestions && (dropdownSuggestions.length > 0 || recentTexts.length > 0)"
+      :examples="exampleSuggestions"
+      :visible="showParsedSuggestions || showExampleSuggestions"
       :active-index="activeIndex"
       @select-suggestion="onSuggestionSelect"
       @reject-suggestion="onSuggestionReject"
-      @select-recent="selectHistoryItem"
+      @select-example="selectExampleItem"
     />
   </div>
 </template>

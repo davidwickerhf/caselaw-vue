@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { Search, X, Loader2 } from 'lucide-vue-next'
 import Button from '~/components/ui/button/Button.vue'
 import SearchSuggestions from './SearchSuggestions.vue'
-import { useHistory } from '~/composables/useHistory'
+import { SEARCH_EXAMPLES } from '~/lib/utils/search-examples'
 
 const props = withDefaults(defineProps<{
   loading?: boolean
@@ -20,12 +20,23 @@ const emit = defineEmits<{
   submit: [text: string]
 }>()
 
-const { recentTexts } = useHistory()
-
 const showSuggestions = ref(false)
 const suggestions = ref<{ text: string; type: string; description?: string }[]>([])
 const activeIndex = ref(-1)
 const inputEl = ref<HTMLInputElement>()
+
+function normalizeExampleQuery(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+const exampleSuggestions = computed(() => {
+  const query = normalizeExampleQuery(model.value)
+  const pool = SEARCH_EXAMPLES
+  const matches = query
+    ? pool.filter((item) => normalizeExampleQuery(item).includes(query))
+    : pool
+  return matches.slice(0, 6)
+})
 
 function handleInput(e: Event) {
   const target = e.target as HTMLInputElement
@@ -36,7 +47,7 @@ function handleInput(e: Event) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  const total = recentTexts.value.slice(0, 3).length + suggestions.value.length
+  const total = suggestions.value.length > 0 ? suggestions.value.length : exampleSuggestions.value.length
   if (e.key === 'ArrowDown') {
     e.preventDefault()
     activeIndex.value = Math.min(activeIndex.value + 1, total - 1)
@@ -46,11 +57,10 @@ function handleKeydown(e: KeyboardEvent) {
   } else if (e.key === 'Enter') {
     e.preventDefault()
     if (activeIndex.value >= 0) {
-      const recentCount = recentTexts.value.slice(0, 3).length
-      if (activeIndex.value < recentCount) {
-        selectSuggestion(recentTexts.value[activeIndex.value])
+      if (suggestions.value.length > 0) {
+        selectSuggestion(suggestions.value[activeIndex.value].text)
       } else {
-        selectSuggestion(suggestions.value[activeIndex.value - recentCount].text)
+        selectExample(exampleSuggestions.value[activeIndex.value])
       }
     } else {
       submit()
@@ -69,6 +79,12 @@ function selectSuggestion(text: string) {
 function submit() {
   showSuggestions.value = false
   emit('submit', model.value)
+}
+
+function selectExample(text: string) {
+  model.value = text
+  showSuggestions.value = false
+  submit()
 }
 
 function clear() {
@@ -109,11 +125,11 @@ function clear() {
       </div>
     </div>
     <SearchSuggestions
-      :suggestions="suggestions"
-      :recent-searches="recentTexts"
+      :suggestions="[]"
+      :examples="exampleSuggestions"
       :visible="showSuggestions"
       :active-index="activeIndex"
-      @select="selectSuggestion"
+      @select-example="selectExample"
     />
   </div>
 </template>

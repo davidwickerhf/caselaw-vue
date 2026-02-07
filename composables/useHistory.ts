@@ -7,6 +7,7 @@ export type HistoryEntry = {
   timestamp: number
   query: SearchQuery
   resultCount?: number
+  mode?: 'text' | 'advanced'
 }
 
 // Module-level singleton state
@@ -29,31 +30,18 @@ function init() {
   }
 }
 
-function queryToText(query: SearchQuery): string {
-  const parts: string[] = []
-  if (query.text) parts.push(query.text)
-  const scoped = query.scoped
-  if (scoped?.echr?.text) parts.push(`ECHR: ${scoped.echr.text}`)
-  if (scoped?.rs?.text) parts.push(`RS: ${scoped.rs.text}`)
-  const allArticles = [...query.articleViolated, ...(scoped?.echr?.articleViolated || [])]
-  if (allArticles.length) parts.push(`Art. ${allArticles.join(', ')}`)
-  const allStates = [...query.respondentState, ...(scoped?.echr?.respondentState || [])]
-  if (allStates.length) parts.push(allStates.join(', '))
-  const allKeywords = [...query.keywords, ...(scoped?.echr?.keywords || []), ...(scoped?.rs?.keywords || [])]
-  if (allKeywords.length) parts.push(allKeywords.join(', '))
-  return parts.join(' · ') || 'Advanced search'
-}
-
 function persist() {
   if (typeof window !== 'undefined') {
     localStorage.setItem('search-history', JSON.stringify(entries.value))
   }
 }
 
-function add(query: SearchQuery, resultCount?: number) {
+function add(query: SearchQuery, resultCount?: number, rawText?: string) {
   init()
-  const text = queryToText(query)
-  if (!text.trim()) return
+  const cleanedText = (rawText ?? '').trim()
+  if (!cleanedText) return
+  const text = cleanedText
+  const mode: HistoryEntry['mode'] = 'text'
 
   // Remove duplicate
   entries.value = entries.value.filter((e) => e.text !== text)
@@ -63,7 +51,8 @@ function add(query: SearchQuery, resultCount?: number) {
     text,
     timestamp: Date.now(),
     query,
-    resultCount
+    resultCount,
+    mode
   }
 
   entries.value = [entry, ...entries.value].slice(0, maxEntries)
@@ -81,7 +70,10 @@ function clear() {
 }
 
 const recentTexts = computed(() => {
-  return entries.value.slice(0, 8).map((e) => e.text)
+  return entries.value
+    .filter((entry) => (entry.mode ?? 'text') === 'text')
+    .slice(0, 8)
+    .map((e) => e.text)
 })
 
 export function useHistory() {

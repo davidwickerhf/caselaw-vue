@@ -1,14 +1,38 @@
 <script setup lang="ts">
-import { Clock, X, Trash2 } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { ArrowRight, Clock, Search, X, Trash2 } from 'lucide-vue-next'
 import Badge from '~/components/ui/badge/Badge.vue'
 import Button from '~/components/ui/button/Button.vue'
-import { useHistory } from '~/composables/useHistory'
+import { useHistory, type HistoryEntry } from '~/composables/useHistory'
 
 const emit = defineEmits<{
-  select: [text: string]
+  select: [entry: HistoryEntry]
 }>()
 
 const { entries, clear, remove } = useHistory()
+const showAll = ref(false)
+const maxVisible = 6
+
+const visibleEntries = computed(() =>
+  showAll.value ? entries.value : entries.value.slice(0, maxVisible)
+)
+
+function entryLabel(entry: HistoryEntry) {
+  return (entry.mode ?? 'text') === 'advanced' ? 'Advanced search' : 'Search string'
+}
+
+function displayText(entry: HistoryEntry) {
+  return entry.text?.trim() || 'Advanced search'
+}
+
+function formatTimestamp(timestamp: number) {
+  const diff = Date.now() - timestamp
+  if (diff < 60_000) return 'Just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`
+  return new Date(timestamp).toLocaleDateString()
+}
 </script>
 
 <template>
@@ -23,25 +47,49 @@ const { entries, clear, remove } = useHistory()
         Clear
       </Button>
     </div>
-    <div class="flex flex-wrap gap-1.5">
-      <div
-        v-for="entry in entries.slice(0, 8)"
+
+    <ul class="space-y-2">
+      <li
+        v-for="entry in visibleEntries"
         :key="entry.id"
-        class="group inline-flex items-center gap-1 rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+        class="group flex items-center gap-2"
       >
-        <button class="truncate max-w-[180px]" @click="emit('select', entry.text)">
-          {{ entry.text }}
-        </button>
-        <Badge v-if="entry.resultCount !== undefined" variant="secondary" class="text-[10px] h-4 ml-1">
-          {{ entry.resultCount }}
-        </Badge>
         <button
-          class="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+          type="button"
+          class="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-border/50 bg-card/50 px-4 py-3 text-left text-sm text-muted-foreground transition-all hover:border-primary/20 hover:bg-accent/50 hover:text-foreground hover:shadow-sm"
+          @click="emit('select', entry)"
+        >
+          <Search class="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary/60" />
+          <span class="truncate text-[13px] font-medium text-foreground/90">
+            {{ displayText(entry) }}
+          </span>
+          <span class="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground/70">
+            <Badge v-if="entry.resultCount !== undefined" variant="secondary" class="text-[10px] h-4 px-1.5">
+              {{ entry.resultCount }}
+            </Badge>
+            <span class="whitespace-nowrap">{{ formatTimestamp(entry.timestamp) }}</span>
+            <ArrowRight class="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-60" />
+          </span>
+        </button>
+        <button
+          type="button"
+          class="opacity-0 transition-opacity group-hover:opacity-100"
           @click.stop="remove(entry.id)"
         >
-          <X class="h-3 w-3 text-muted-foreground" />
+          <X class="h-4 w-4 text-muted-foreground" />
         </button>
-      </div>
+      </li>
+    </ul>
+
+    <div v-if="entries.length > maxVisible" class="flex justify-center">
+      <Button
+        variant="ghost"
+        size="sm"
+        class="h-7 px-2 text-[11px] text-muted-foreground"
+        @click="showAll = !showAll"
+      >
+        {{ showAll ? 'Show less' : `Show all (${entries.length})` }}
+      </Button>
     </div>
   </div>
 </template>

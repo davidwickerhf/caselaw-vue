@@ -11,6 +11,7 @@ const error = ref<string | null>(null)
 const selectedResult = ref<Citation | null>(null)
 const detailOpen = ref(false)
 const selectedIds = ref<Set<string>>(new Set())
+const cursorHistory = ref<Record<number, string | undefined>>({ 1: undefined })
 
 // Abort function for cancelling background page loading on new searches
 let abortBackground: (() => void) | null = null
@@ -22,14 +23,24 @@ async function search() {
     abortBackground = null
   }
 
+  const requestedPage = query.value.page
+  const requestedCursor = query.value.cursor
+
   loading.value = true
   error.value = null
   try {
+    const seed = query.value.page > 1 && results.value
+      ? { facets: results.value.facets, total: results.value.total, totalIsExact: results.value.totalIsExact }
+      : undefined
     const abort = await executeSearch(query.value, (result) => {
       results.value = result
+      if (result.nextCursor !== undefined) {
+        cursorHistory.value = { ...cursorHistory.value, [requestedPage + 1]: result.nextCursor }
+      }
+      cursorHistory.value = { ...cursorHistory.value, [requestedPage]: requestedCursor }
       // Once we have first results, stop showing the main loading spinner
       loading.value = false
-    })
+    }, seed)
     abortBackground = abort
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Search failed'
@@ -42,6 +53,11 @@ function setQuery(partial: Partial<SearchQuery>) {
   query.value = { ...query.value, ...partial }
 }
 
+function resetPagination() {
+  cursorHistory.value = { 1: undefined }
+  query.value = { ...query.value, page: 1, cursor: undefined }
+}
+
 function resetQuery() {
   if (abortBackground) {
     abortBackground()
@@ -52,6 +68,7 @@ function resetQuery() {
   error.value = null
   selectedResult.value = null
   selectedIds.value = new Set()
+  cursorHistory.value = { 1: undefined }
 }
 
 function selectResult(citation: Citation) {
@@ -85,21 +102,24 @@ function clearSelection() {
 const hasSelection = computed(() => selectedIds.value.size > 0)
 const selectedCount = computed(() => selectedIds.value.size)
 const totalPages = computed(() => {
-  if (!results.value) return 0
+  if (!results.value || !results.value.totalIsExact) return null
   return Math.ceil(results.value.total / query.value.pageSize)
 })
 
 async function goToPage(page: number) {
-  query.value = { ...query.value, page }
+  const cursor = cursorHistory.value[page]
+  query.value = { ...query.value, page, cursor }
   await search()
 }
 
 async function setSort(sortBy: SearchQuery['sortBy'], sortDirection?: SearchQuery['sortDirection']) {
+  cursorHistory.value = { 1: undefined }
   query.value = {
     ...query.value,
     sortBy,
     sortDirection: sortDirection || query.value.sortDirection,
-    page: 1
+    page: 1,
+    cursor: undefined
   }
   await search()
 }
@@ -143,9 +163,11 @@ export function useSearch() {
     selectedResult,
     detailOpen,
     selectedIds,
+    cursorHistory,
     search,
     setQuery,
     resetQuery,
+    resetPagination,
     selectResult,
     closeDetail,
     toggleSelection,

@@ -2,6 +2,7 @@ import { ref, computed } from 'vue';
 import { parseSearchInput } from '~/lib/parser/search-parser';
 import { tokensToSearchQuery } from '~/lib/parser/query-mapper';
 import { tokensToQueryBuilderGroup } from '~/lib/parser/query-builder-mapper';
+import { parseNaturalLanguageToQueryBuilderGroup } from '~/lib/parser/nl-query-parser';
 import { searchQueryToTokens, searchQueryToQueryBuilderGroup } from '~/lib/utils/search-query';
 import type { ParsedToken, ParseSuggestion, QueryBuilderGroup, SearchQuery } from '~/lib/types';
 
@@ -126,6 +127,7 @@ function removeTextRange(segments: SmartSegment[], start: number, end: number): 
 const segments = ref<SmartSegment[]>([]);
 const suggestions = ref<ParseSuggestion[]>([]);
 const allSuggestions = ref<ParseSuggestion[]>([]);
+const acceptedTokens = ref<ParsedToken[]>([]);
 const queryBuilderGroup = ref<QueryBuilderGroup>({
     id: 'root',
     operator: 'AND',
@@ -136,6 +138,9 @@ const lastEditSource = ref<'searchbar' | 'querybuilder'>('searchbar');
 const searchString = ref('');
 const rejectedSuggestionKeys = new Set<string>();
 const rejectedSuggestionTriggers = new Map<string, string>();
+const acceptedSuggestionKeys = new Set<string>();
+const acceptedSuggestionTriggers = new Map<string, string>();
+const acceptedTokensByKey = new Map<string, ParsedToken[]>();
 const lastWordCount = ref(0);
 
 // Debounced parse
@@ -146,25 +151,35 @@ function runParse() {
     if (!text.trim()) {
         suggestions.value = [];
         allSuggestions.value = [];
+        acceptedSuggestionKeys.clear();
+        acceptedSuggestionTriggers.clear();
+        acceptedTokensByKey.clear();
+        acceptedTokens.value = [];
         syncQueryBuilder();
         return;
     }
 
     updateRejectedForText(text);
+    updateAcceptedForText(text);
 
     const result = parseSearchInput(text);
     allSuggestions.value = result.suggestions;
-    suggestions.value = result.suggestions.filter((s) => !rejectedSuggestionKeys.has(suggestionKey(s)));
+    suggestions.value = result.suggestions.filter((s) => {
+        const key = suggestionKey(s);
+        return !rejectedSuggestionKeys.has(key) && !acceptedSuggestionKeys.has(key);
+    });
 
     syncQueryBuilder();
 }
 
 function syncQueryBuilder() {
     if (lastEditSource.value === 'querybuilder') return;
-    queryBuilderGroup.value = tokensToQueryBuilderGroup(
-		segments.value.filter((seg) => seg.kind === 'token').map((seg) => (seg as { kind: 'token'; token: ParsedToken }).token),
-		''
-	);
+    const text = segmentsToRawText(segments.value);
+    if (text.trim()) {
+        queryBuilderGroup.value = parseNaturalLanguageToQueryBuilderGroup(text);
+        return;
+    }
+    queryBuilderGroup.value = tokensToQueryBuilderGroup(getAllTokens(), '');
 }
 
 function onSegmentsChange(nextSegments: SmartSegment[]) {
@@ -198,6 +213,31 @@ function acceptSuggestion(suggestionId: string) {
     syncQueryBuilder();
 }
 
+function acceptSuggestionSoft(suggestionId: string) {
+    const suggestion = suggestions.value.find((s) => s.id === suggestionId);
+    if (!suggestion) return;
+
+    const tokens = suggestion.tokens && suggestion.tokens.length > 0 ? suggestion.tokens : [suggestion.token];
+    const key = suggestionKey(suggestion);
+    acceptedSuggestionKeys.add(key);
+    acceptedSuggestionTriggers.set(key, suggestion.trigger);
+    acceptedTokensByKey.set(key, tokens);
+    addAcceptedTokens(tokens);
+
+    suggestions.value = [];
+    lastEditSource.value = 'searchbar';
+    const text = segmentsToRawText(segments.value);
+    if (text.trim()) {
+        const result = parseSearchInput(text);
+        allSuggestions.value = result.suggestions;
+        suggestions.value = result.suggestions.filter((s) => {
+            const nextKey = suggestionKey(s);
+            return !rejectedSuggestionKeys.has(nextKey) && !acceptedSuggestionKeys.has(nextKey);
+        });
+    }
+    syncQueryBuilder();
+}
+
 function acceptAllSuggestions() {
     if (suggestions.value.length === 0) return;
 
@@ -227,6 +267,22 @@ function acceptAllSuggestions() {
     syncQueryBuilder();
 }
 
+function acceptAllSuggestionsSoft() {
+    if (suggestions.value.length === 0) return;
+    for (const suggestion of suggestions.value) {
+        const tokens = suggestion.tokens && suggestion.tokens.length > 0 ? suggestion.tokens : [suggestion.token];
+        const key = suggestionKey(suggestion);
+        acceptedSuggestionKeys.add(key);
+        acceptedSuggestionTriggers.set(key, suggestion.trigger);
+        acceptedTokensByKey.set(key, tokens);
+        addAcceptedTokens(tokens);
+    }
+    suggestions.value = [];
+    allSuggestions.value = [];
+    lastEditSource.value = 'searchbar';
+    syncQueryBuilder();
+}
+
 function rejectSuggestion(suggestionId: string) {
     const suggestion = allSuggestions.value.find((s) => s.id === suggestionId)
         || suggestions.value.find((s) => s.id === suggestionId);
@@ -235,6 +291,7 @@ function rejectSuggestion(suggestionId: string) {
     const key = suggestionKey(suggestion);
     rejectedSuggestionKeys.add(key);
     rejectedSuggestionTriggers.set(key, suggestion.trigger);
+    removeAcceptedByKey(key);
 
     const tokens = suggestion.tokens && suggestion.tokens.length > 0 ? suggestion.tokens : [suggestion.token];
     segments.value = removeTextRange(segments.value, suggestion.triggerStart, suggestion.triggerEnd);
@@ -253,16 +310,17 @@ function rejectSuggestion(suggestionId: string) {
 }
 
 function removeToken(tokenId: string) {
+    const token = segments.value.find((seg) => seg.kind === 'token' && seg.token.id === tokenId);
     segments.value = segments.value.filter((seg) => !(seg.kind === 'token' && seg.token.id === tokenId));
+    if (token && token.kind === 'token') {
+        removeAcceptedBySignature(token.token);
+    }
     lastEditSource.value = 'searchbar';
     syncQueryBuilder();
 }
 
 function buildSearchQuery(): SearchQuery {
-	const tokens = segments.value
-		.filter((seg) => seg.kind === 'token')
-		.map((seg) => (seg as { kind: 'token'; token: ParsedToken }).token);
-    return tokensToSearchQuery(tokens, '');
+    return tokensToSearchQuery(getAllTokens(), '');
 }
 
 function clearAll() {
@@ -271,6 +329,10 @@ function clearAll() {
     allSuggestions.value = [];
     rejectedSuggestionKeys.clear();
     rejectedSuggestionTriggers.clear();
+    acceptedSuggestionKeys.clear();
+    acceptedSuggestionTriggers.clear();
+    acceptedTokensByKey.clear();
+    acceptedTokens.value = [];
     lastWordCount.value = 0;
     lastEditSource.value = 'searchbar';
     searchString.value = '';
@@ -284,6 +346,10 @@ function setFromText(text: string) {
     allSuggestions.value = [];
     rejectedSuggestionKeys.clear();
     rejectedSuggestionTriggers.clear();
+    acceptedSuggestionKeys.clear();
+    acceptedSuggestionTriggers.clear();
+    acceptedTokensByKey.clear();
+    acceptedTokens.value = [];
     lastWordCount.value = 0;
     lastEditSource.value = 'searchbar';
     runParse();
@@ -312,6 +378,10 @@ function setFromSearchQuery(query: SearchQuery) {
     allSuggestions.value = [];
     rejectedSuggestionKeys.clear();
     rejectedSuggestionTriggers.clear();
+    acceptedSuggestionKeys.clear();
+    acceptedSuggestionTriggers.clear();
+    acceptedTokensByKey.clear();
+    acceptedTokens.value = [];
     lastWordCount.value = 0;
     lastEditSource.value = 'searchbar';
     searchString.value = '';
@@ -347,11 +417,14 @@ export function useSmartSearch() {
         freeText,
         searchString: computed(() => searchString.value),
         suggestions: computed(() => suggestions.value),
+        allSuggestions: computed(() => allSuggestions.value),
         queryBuilderGroup,
         lastEditSource,
         onSegmentsChange,
         acceptSuggestion,
+        acceptSuggestionSoft,
         acceptAllSuggestions,
+        acceptAllSuggestionsSoft,
         rejectSuggestion,
         removeToken,
         buildSearchQuery,
@@ -384,9 +457,61 @@ function updateRejectedForText(text: string) {
 	}
 }
 
+function updateAcceptedForText(text: string) {
+	const lowerText = text.toLowerCase();
+	for (const [key, trigger] of acceptedSuggestionTriggers.entries()) {
+		if (!lowerText.includes(trigger.toLowerCase())) {
+			removeAcceptedByKey(key);
+		}
+	}
+}
+
 function removeTokensBySignature(segments: SmartSegment[], tokens: ParsedToken[]): SmartSegment[] {
 	return segments.filter((seg) => {
 		if (seg.kind !== 'token') return true;
 		return !tokens.some((t) => t.type === seg.token.type && t.value === seg.token.value);
+	});
+}
+
+function tokenSignature(token: ParsedToken): string {
+	return `${token.type}:${token.value}`;
+}
+
+function addAcceptedTokens(tokens: ParsedToken[]) {
+	const existing = new Set(acceptedTokens.value.map(tokenSignature));
+	for (const token of tokens) {
+		const sig = tokenSignature(token);
+		if (existing.has(sig)) continue;
+		acceptedTokens.value.push(token);
+		existing.add(sig);
+	}
+}
+
+function removeAcceptedBySignature(token: ParsedToken) {
+	const sig = tokenSignature(token);
+	acceptedTokens.value = acceptedTokens.value.filter((t) => tokenSignature(t) !== sig);
+}
+
+function removeAcceptedByKey(key: string) {
+	acceptedSuggestionKeys.delete(key);
+	acceptedSuggestionTriggers.delete(key);
+	const tokens = acceptedTokensByKey.get(key);
+	if (tokens) {
+		for (const token of tokens) removeAcceptedBySignature(token);
+	}
+	acceptedTokensByKey.delete(key);
+}
+
+function getAllTokens(): ParsedToken[] {
+	const segmentTokens = segments.value
+		.filter((seg) => seg.kind === 'token')
+		.map((seg) => (seg as { kind: 'token'; token: ParsedToken }).token);
+	const combined = [...segmentTokens, ...acceptedTokens.value];
+	const seen = new Set<string>();
+	return combined.filter((token) => {
+		const sig = tokenSignature(token);
+		if (seen.has(sig)) return false;
+		seen.add(sig);
+		return true;
 	});
 }

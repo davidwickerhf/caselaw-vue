@@ -1,145 +1,147 @@
-import type { Citation, SearchQuery, ApiNetworkResponse, ApiNode } from '~/lib/types';
-import { DataSource } from '~/lib/types';
-import { normalizeRespondentStates, respondentCodeToName } from '~/lib/utils/respondent-state';
-import { buildEffectiveEchrFilters, buildEffectiveRsFilters } from '~/lib/utils/search-scope';
+import type { Citation, SearchQuery, ApiNetworkResponse, ApiNode, QueryBuilderGroup, ApiEdge, SourceScope } from '~/lib/types';
+import { respondentCodeToName, respondentStateToCode } from '~/lib/utils/respondent-state';
+import { defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
 
 const API_BASE = 'http://localhost:3000';
 
-const DEFAULT_PAGE_SIZE = 500;
-const MAX_PAGES = 20; // Safety limit to prevent infinite loops
+const DEFAULT_PAGE_SIZE = 100;
 
-/**
- * Build the request body for the ECHR API endpoint.
- */
-function buildEchrBody(query: SearchQuery, pageSize: number, cursor?: string): Record<string, unknown> {
-    const effective = buildEffectiveEchrFilters(query);
-    const args: Record<string, unknown> = {
-        degreesSource: 0,
-        degreesTarget: 0,
-        attributesToFetch: 'ALL',
-        onlyCaseIds: false,
-        isSubgraph: false,
-        pageSize
-    };
+type CombinedNode = ApiNode & { data: Record<string, unknown> & { dataset?: string; isResult?: string | boolean } };
+type CombinedResponse = ApiNetworkResponse & { edges?: ApiEdge[] };
 
-    if (cursor) {
-        args.cursor = cursor;
-    }
+const RS_DOC_TYPES = new Set(['DEC', 'OPI']);
+const ECHR_DOC_TYPES = new Set(['HEJUD', 'HEDEC', 'HECOM', 'HEINF', 'HECJUD', 'HECDEC', 'HECCOM', 'HECINF']);
+const COMMON_FIELDS = new Set(['text', 'title', 'ecli', 'keywords', 'year', 'source']);
 
-    // Keywords: combine free-text and structured keywords
-    const allKeywords = [
-        ...(effective.text.trim() ? [effective.text.trim()] : []),
-        ...effective.keywords
-    ];
-    if (allKeywords.length > 0) {
-        args.keywords = allKeywords;
-    }
-
-    // ECLI search
-    if (effective.eclis.length > 0) {
-        args.ecli = effective.eclis;
-    }
-
-    // Article filters
-    if (effective.articleViolated.length > 0) {
-        args.article_violated = effective.articleViolated;
-        args.article_violated_mode = 'OR';
-    }
-    if (effective.articleApplied.length > 0) {
-        args.article_applied = effective.articleApplied;
-        args.article_applied_mode = 'OR';
-    }
-    if (effective.articleNonViolated.length > 0) {
-        args.article_non_violated = effective.articleNonViolated;
-        args.article_non_violated_mode = 'OR';
-    }
-
-    // Respondent state
-    if (effective.respondentState.length > 0) {
-        args.respondent_state = normalizeRespondentStates(effective.respondentState);
-    }
-
-    // Document type
-    if (effective.documentType.length > 0) {
-        args.document_type = effective.documentType;
-    }
-
-    // Importance
-    if (effective.importance.length > 0) {
-        args.importance = effective.importance;
-    }
-
-    // Date range
-    if (effective.dateStart) {
-        args.date_judgment_start = effective.dateStart;
-    }
-    if (effective.dateEnd) {
-        args.date_judgment_end = effective.dateEnd;
-    }
-
-    return { arguments: args };
+function normalizeSourceValue(value: string): string | null {
+    const upper = value.trim().toUpperCase();
+    if (!upper) return null;
+    if (upper === 'RS' || upper === 'RECHTSPRAAK') return 'RS';
+    if (upper === 'ECHR' || upper === 'HUDOC') return 'ECHR';
+    if (upper === 'ANY' || upper === 'BOTH' || upper === 'ALL') return 'ANY';
+    return null;
 }
 
-/**
- * Build the request body for the Network (Rechtspraak) API endpoint.
- */
-function buildNetworkBody(query: SearchQuery, pageSize: number, cursor?: string): Record<string, unknown> {
-    const effective = buildEffectiveRsFilters(query);
-    const args: Record<string, unknown> = {
-        dataSources: ['RS'],
-        engine: 'ES',
-        degreesSource: 0,
-        degreesTarget: 0,
-        attributesToFetch: 'ALL',
-        onlyCaseIds: false,
-        isSubgraph: false,
-        docTypes: ['DEC', 'OPI'],  // Required by the API
-        pageSize
+function normalizeYearValue(value: string): string | null {
+    const num = Number(value);
+    const currentYear = new Date().getFullYear();
+    if (!Number.isInteger(num) || num < 1900 || num > currentYear) return null;
+    return String(num);
+}
+
+function normalizeImportanceValue(value: string): string | null {
+    const num = Number(value);
+    if (!Number.isInteger(num) || num < 1 || num > 4) return null;
+    return String(num);
+}
+
+function normalizeDocumentType(value: string, scope: SourceScope): { value: string; scope: SourceScope } | null {
+    const upper = value.trim().toUpperCase();
+    if (!upper) return null;
+    if (scope === 'ANY') {
+        if (RS_DOC_TYPES.has(upper)) return { value: upper, scope: 'RS' };
+        if (ECHR_DOC_TYPES.has(upper)) return { value: upper, scope: 'ECHR' };
+        return null;
+    }
+    if (scope === 'RS') return RS_DOC_TYPES.has(upper) ? { value: upper, scope } : null;
+    return ECHR_DOC_TYPES.has(upper) ? { value: upper, scope } : null;
+}
+
+function normalizeRuleScope(scope: SourceScope, field: string): SourceScope {
+    if (isFieldAllowed(scope, field)) return scope;
+    return defaultScopeForField(field);
+}
+
+function normalizeRuleValue(field: string, value: string, scope: SourceScope): { value: string; scope: SourceScope } | null {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    switch (field) {
+        case 'respondent_state': {
+            const code = respondentStateToCode(trimmed);
+            if (!code) return null;
+            return { value: code, scope };
+        }
+        case 'year': {
+            const year = normalizeYearValue(trimmed);
+            if (!year) return null;
+            return { value: year, scope };
+        }
+        case 'importance': {
+            const imp = normalizeImportanceValue(trimmed);
+            if (!imp) return null;
+            return { value: imp, scope };
+        }
+        case 'document_type': {
+            return normalizeDocumentType(trimmed, scope);
+        }
+        case 'source': {
+            const src = normalizeSourceValue(trimmed);
+            if (!src) return null;
+            return { value: src, scope };
+        }
+        default:
+            return { value: trimmed, scope };
+    }
+}
+
+function serializeQueryBuilder(group: QueryBuilderGroup) {
+    const rules = group.rules
+        .map((r) => {
+            const field = String(r.field || '').trim();
+            const operator = String(r.operator || '').trim();
+            const rawValue = String(r.value || '').trim();
+            if (!field || !operator || !rawValue) return null;
+
+            let scope = normalizeRuleScope((r.sourceScope || defaultScopeForField(field)) as SourceScope, field);
+            if (scope === 'ANY' && !COMMON_FIELDS.has(field) && field !== 'document_type') {
+                scope = defaultScopeForField(field);
+            }
+
+            const normalized = normalizeRuleValue(field, rawValue, scope);
+            if (!normalized) return null;
+
+            return {
+                field,
+                operator,
+                value: normalized.value,
+                sourceScope: normalized.scope
+            };
+        })
+        .filter((r): r is { field: string; operator: string; value: string; sourceScope: SourceScope } => !!r);
+
+    const groups = group.groups.map((g) => ({
+        op: g.operator,
+        rules: g.rules
+            .map((r) => {
+                const field = String(r.field || '').trim();
+                const operator = String(r.operator || '').trim();
+                const rawValue = String(r.value || '').trim();
+                if (!field || !operator || !rawValue) return null;
+
+                let scope = normalizeRuleScope((r.sourceScope || defaultScopeForField(field)) as SourceScope, field);
+                if (scope === 'ANY' && !COMMON_FIELDS.has(field) && field !== 'document_type') {
+                    scope = defaultScopeForField(field);
+                }
+
+                const normalized = normalizeRuleValue(field, rawValue, scope);
+                if (!normalized) return null;
+
+                return {
+                    field,
+                    operator,
+                    value: normalized.value,
+                    sourceScope: normalized.scope
+                };
+            })
+            .filter((r): r is { field: string; operator: string; value: string; sourceScope: SourceScope } => !!r)
+    }));
+
+    return {
+        op: group.operator,
+        rules,
+        groups
     };
-
-    if (cursor) {
-        args.cursor = cursor;
-    }
-
-    // Keywords: combine free-text and structured keywords
-    const allKeywords = [
-        ...(effective.text.trim() ? [effective.text.trim()] : []),
-        ...effective.keywords
-    ];
-    if (allKeywords.length > 0) {
-        args.keywords = allKeywords;
-    }
-
-    // ECLI search
-    if (effective.eclis.length > 0) {
-        args.eclis = effective.eclis;
-    }
-
-    // Date range
-    if (effective.dateStart) {
-        args.dateStart = effective.dateStart;
-    }
-    if (effective.dateEnd) {
-        args.dateEnd = effective.dateEnd;
-    }
-
-    // Document types - only override default if valid RS types are selected
-    const rsDocTypes = effective.documentType.filter((dt) => dt === 'DEC' || dt === 'OPI');
-    if (rsDocTypes.length > 0) {
-        args.docTypes = rsDocTypes;
-    }
-
-    // Instances
-    if (effective.instances.length > 0) {
-        args.instances = effective.instances;
-    }
-
-    // Domains
-    if (effective.domains.length > 0) {
-        args.domains = effective.domains;
-    }
-
-    return { arguments: args };
 }
 
 /**
@@ -240,14 +242,36 @@ function transformNetworkNode(node: ApiNode): Citation {
 export type PageResult = {
     citations: Citation[];
     nextCursor?: string;
+    total?: number;
+    totalIsExact?: boolean;
 };
 
 /**
  * Fetch a single page from the ECHR API.
  */
-export async function fetchEchrPage(query: SearchQuery, pageSize = DEFAULT_PAGE_SIZE, cursor?: string): Promise<PageResult> {
-    const body = buildEchrBody(query, pageSize, cursor);
-    const response = await fetch(`${API_BASE}/api/echr`, {
+export async function fetchCombinedPage(
+    query: SearchQuery,
+    group: QueryBuilderGroup,
+    pageSize = DEFAULT_PAGE_SIZE,
+    cursor?: string
+): Promise<PageResult> {
+    const sortBy = query.sortBy === 'relevance' ? 'relevance' : 'date';
+    const body = {
+        queryBuilder: serializeQueryBuilder(group),
+        degreesSource: 0,
+        degreesTarget: 0,
+        isSubgraph: false,
+        sort: {
+            by: sortBy,
+            direction: query.sortDirection || 'desc'
+        },
+        pagination: {
+            pageSize,
+            cursor: cursor || undefined
+        }
+    };
+
+    const response = await fetch(`${API_BASE}/api/combined`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -255,77 +279,50 @@ export async function fetchEchrPage(query: SearchQuery, pageSize = DEFAULT_PAGE_
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`ECHR API error (${response.status}): ${errorText}`);
+        throw new Error(`Combined API error (${response.status}): ${errorText}`);
     }
 
     const data = await response.json();
     if (data.error) {
-        throw new Error(`ECHR API: ${data.error}`);
+        throw new Error(`Combined API: ${data.error}`);
     }
-    const result = data as ApiNetworkResponse;
+    const result = data as CombinedResponse;
     const nodes = (result.nodes || [])
-        .filter((n) => n.data.isResult === 'True' || n.data.isResult === true);
+        .filter((n: CombinedNode) => n.data.isResult === 'True' || n.data.isResult === true) as CombinedNode[];
 
-    return {
-        citations: nodes.map(transformEchrNode),
-        nextCursor: result.pagination?.nextCursor
-    };
-}
-
-/**
- * Fetch a single page from the Network (Rechtspraak) API.
- */
-export async function fetchNetworkPage(query: SearchQuery, pageSize = DEFAULT_PAGE_SIZE, cursor?: string): Promise<PageResult> {
-    const body = buildNetworkBody(query, pageSize, cursor);
-    const response = await fetch(`${API_BASE}/api/network`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+    const citations = nodes.map((node) => {
+        const dataset = String(node.data.dataset || '').toUpperCase();
+        const citation = dataset === 'ECHR'
+            ? transformEchrNode(node)
+            : transformNetworkNode(node);
+        const relevanceScore = typeof node.data.relevanceScore === 'number' ? node.data.relevanceScore : undefined;
+        return relevanceScore !== undefined ? { ...citation, relevanceScore } : citation;
     });
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Network API error (${response.status}): ${errorText}`);
-    }
+    const total =
+        (typeof (result as { total?: unknown }).total === 'number' ? (result as { total: number }).total : undefined) ??
+        (typeof (result.pagination as { total?: unknown } | undefined)?.total === 'number'
+            ? (result.pagination as { total: number }).total
+            : undefined) ??
+        (typeof (result.pagination as { totalCount?: unknown } | undefined)?.totalCount === 'number'
+            ? (result.pagination as { totalCount: number }).totalCount
+            : undefined);
 
-    const data = await response.json();
-    if (data.error) {
-        throw new Error(`Network API: ${data.error}`);
-    }
-    const result = data as ApiNetworkResponse;
-    const nodes = (result.nodes || [])
-        .filter((n) => n.data.isResult === 'True' || n.data.isResult === true);
+    const totalIsExact =
+        (typeof (result as { totalIsExact?: unknown }).totalIsExact === 'boolean'
+            ? (result as { totalIsExact: boolean }).totalIsExact
+            : undefined) ??
+        (typeof (result.pagination as { totalIsExact?: unknown } | undefined)?.totalIsExact === 'boolean'
+            ? (result.pagination as { totalIsExact: boolean }).totalIsExact
+            : undefined) ??
+        (total !== undefined ? true : undefined);
 
     return {
-        citations: nodes.map(transformNetworkNode),
-        nextCursor: result.pagination?.nextCursor
+        citations,
+        nextCursor: result.pagination?.nextCursor,
+        total,
+        totalIsExact
     };
 }
 
-/**
- * Determine which sources should be searched based on the query.
- */
-export function getSearchableSources(query: SearchQuery): { echr: boolean; rs: boolean } {
-    const searchECHR = query.sources.length === 0 || query.sources.includes(DataSource.ECHR);
-    const searchRS = query.sources.length === 0 || query.sources.includes(DataSource.RS);
-
-    const echrFilters = buildEffectiveEchrFilters(query);
-    const rsFilters = buildEffectiveRsFilters(query);
-
-    const echrHasTextOrKeywords = echrFilters.text.trim().length > 0 || echrFilters.keywords.length > 0;
-    const rsHasTextOrKeywords = rsFilters.text.trim().length > 0 || rsFilters.keywords.length > 0;
-    const echrHasEclis = echrFilters.eclis.length > 0;
-    const rsHasEclis = rsFilters.eclis.length > 0;
-    const echrHasArticles = echrFilters.articleViolated.length > 0 || echrFilters.articleApplied.length > 0 ||
-        echrFilters.articleNonViolated.length > 0;
-    const rsHasFilters = rsFilters.instances.length > 0 || rsFilters.domains.length > 0 || rsFilters.documentType.length > 0;
-    const echrHasDate = !!echrFilters.dateStart || !!echrFilters.dateEnd;
-    const rsHasDate = !!rsFilters.dateStart || !!rsFilters.dateEnd;
-
-    const echrCanSearch = searchECHR && (echrHasEclis || echrHasTextOrKeywords || echrHasArticles || echrHasDate);
-    const rsCanSearch = searchRS && (rsHasTextOrKeywords || rsHasEclis || rsHasFilters || rsHasDate);
-
-    return { echr: echrCanSearch, rs: rsCanSearch };
-}
-
-export { DEFAULT_PAGE_SIZE, MAX_PAGES };
+export { DEFAULT_PAGE_SIZE };

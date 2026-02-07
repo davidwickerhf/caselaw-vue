@@ -66,6 +66,7 @@ export type EchrSearchFilters = CommonSearchFilters & {
     articleApplied: string[];
     articleNonViolated: string[];
     respondentState: string[];
+    applicationNumbers: string[];
     documentType: string[];
     importance: number[];
 };
@@ -86,14 +87,14 @@ export type SearchQuery = {
     sources: DataSource[];
     keywords: string[];
     eclis: string[];
-    echrCursor?: string;
-    rsCursor?: string;
+    cursor?: string;
     dateStart?: string;
     dateEnd?: string;
     articleViolated: string[];
     articleApplied: string[];
     articleNonViolated: string[];
     respondentState: string[];
+    applicationNumbers: string[];
     documentType: string[];
     importance: number[];
     instances: string[];
@@ -103,14 +104,17 @@ export type SearchQuery = {
     page: number;
     pageSize: number;
     scoped: ScopedSearchFilters;
+    queryBuilderGroup?: QueryBuilderGroup;
 };
 
 export type SearchResult = {
     results: Citation[];
     total: number;
+    totalIsExact: boolean;
     page: number;
     pageSize: number;
     facets: SearchFacets;
+    nextCursor?: string;
     loadingMore?: boolean;
     aiSummary?: string;
     relatedSearches?: string[];
@@ -160,6 +164,7 @@ export type ParsedTokenType =
     | 'article_applied'
     | 'article_non_violated'
     | 'respondent_state'
+    | 'application_number'
     | 'year'
     | 'date_start'
     | 'date_end'
@@ -168,6 +173,7 @@ export type ParsedTokenType =
     | 'instance'
     | 'domain'
     | 'source'
+    | 'ecli'
     | 'keyword';
 
 export type ParsedToken = {
@@ -223,12 +229,12 @@ export function createDefaultSearchQuery(): SearchQuery {
         sources: [DataSource.ECHR, DataSource.RS],
         keywords: [],
         eclis: [],
-        echrCursor: undefined,
-        rsCursor: undefined,
+        cursor: undefined,
         articleViolated: [],
         articleApplied: [],
         articleNonViolated: [],
         respondentState: [],
+        applicationNumbers: [],
         documentType: [],
         importance: [],
         instances: [],
@@ -236,7 +242,7 @@ export function createDefaultSearchQuery(): SearchQuery {
         sortBy: 'relevance',
         sortDirection: 'desc',
         page: 1,
-        pageSize: 20,
+        pageSize: 100,
         scoped: {
             echr: {
                 text: '',
@@ -246,6 +252,7 @@ export function createDefaultSearchQuery(): SearchQuery {
                 articleApplied: [],
                 articleNonViolated: [],
                 respondentState: [],
+                applicationNumbers: [],
                 documentType: [],
                 importance: []
             },

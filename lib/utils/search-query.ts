@@ -59,8 +59,14 @@ export function searchQueryToTokens(query: SearchQuery): ParsedToken[] {
 	for (const state of [...query.respondentState, ...scoped.echr.respondentState]) {
 		addToken({ id: genId(), type: 'respondent_state', value: state, display: state });
 	}
+	for (const app of [...query.applicationNumbers, ...scoped.echr.applicationNumbers]) {
+		addToken({ id: genId(), type: 'application_number', value: app, display: app });
+	}
 	for (const keyword of [...query.keywords, ...scoped.echr.keywords, ...scoped.rs.keywords]) {
 		addToken({ id: genId(), type: 'keyword', value: keyword, display: keyword });
+	}
+	for (const ecli of [...query.eclis, ...scoped.echr.eclis, ...scoped.rs.eclis]) {
+		addToken({ id: genId(), type: 'ecli', value: ecli, display: ecli });
 	}
 
 	addDateTokens(query.dateStart, query.dateEnd);
@@ -131,6 +137,7 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 	for (const value of query.articleApplied) pushRule('article_applied', 'equals', value, 'ANY');
 	for (const value of query.articleNonViolated) pushRule('article_non_violated', 'equals', value, 'ANY');
 	for (const value of query.respondentState) pushRule('respondent_state', 'equals', value, 'ANY');
+	for (const value of query.applicationNumbers) pushRule('application_number', 'equals', value, 'ANY');
 	for (const value of query.documentType) pushRule('document_type', 'equals', value, 'ANY');
 	for (const value of query.importance) pushRule('importance', 'equals', String(value), 'ANY');
 	for (const value of query.instances) pushRule('instance', 'equals', value, 'ANY');
@@ -149,6 +156,7 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 	for (const value of scoped.echr.articleApplied) pushRule('article_applied', 'equals', value, 'ECHR');
 	for (const value of scoped.echr.articleNonViolated) pushRule('article_non_violated', 'equals', value, 'ECHR');
 	for (const value of scoped.echr.respondentState) pushRule('respondent_state', 'equals', value, 'ECHR');
+	for (const value of scoped.echr.applicationNumbers) pushRule('application_number', 'equals', value, 'ECHR');
 	for (const value of scoped.echr.documentType) pushRule('document_type', 'equals', value, 'ECHR');
 	for (const value of scoped.echr.importance) pushRule('importance', 'equals', String(value), 'ECHR');
 
@@ -190,7 +198,8 @@ function addTextQuery(query: CommonSearchFilters, value: string) {
 
 function parseYear(value: string): number | null {
 	const num = Number(value);
-	if (!Number.isInteger(num) || num < 1900 || num > 2100) return null;
+	const currentYear = new Date().getFullYear();
+	if (!Number.isInteger(num) || num < 1900 || num > currentYear) return null;
 	return num;
 }
 
@@ -228,6 +237,9 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 	for (const rule of flattenedRules) {
 		const value = normalizeText(rule.value || '');
 		if (!value) continue;
+		if (rule.operator.startsWith('not_')) {
+			continue;
+		}
 
 		const rawScope = rule.sourceScope || 'ANY';
 		const scope: SourceScope = isFieldAllowed(rawScope, rule.field)
@@ -262,9 +274,13 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 				query.scoped.echr.articleNonViolated.push(value);
 				break;
 			case 'respondent_state':
-				if (rule.operator !== 'equals') return { error: 'Only "is" is supported for Respondent State.' };
+				if (rule.operator !== 'equals') continue;
 				if (scope === 'RS') return { error: 'Respondent State is not supported for Rechtspraak.' };
 				query.scoped.echr.respondentState.push(value);
+				break;
+			case 'application_number':
+				if (scope === 'RS') return { error: 'Application Number is not supported for Rechtspraak.' };
+				query.scoped.echr.applicationNumbers.push(value);
 				break;
 			case 'year': {
 				const year = parseYear(value);
@@ -316,7 +332,7 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 				break;
 			}
 			case 'source': {
-				if (rule.operator !== 'equals') return { error: 'Only "is" is supported for Data Source.' };
+				if (rule.operator !== 'equals') continue;
 				const upper = value.toUpperCase();
 				const src = upper === 'ECHR' || upper === 'HUDOC'
 					? DataSource.ECHR
@@ -353,8 +369,7 @@ export function searchQueryToParams(query: SearchQuery): URLSearchParams {
 	if (query.sources.join(',') !== defaults.sources.join(',')) params.set('sources', query.sources.join(','));
 	if (query.keywords.length) params.set('keywords', query.keywords.join(','));
 	if (query.eclis.length) params.set('eclis', query.eclis.join(','));
-	if (query.echrCursor) params.set('echrCursor', query.echrCursor);
-	if (query.rsCursor) params.set('rsCursor', query.rsCursor);
+	if (query.cursor) params.set('cursor', query.cursor);
 	if (query.dateStart) params.set('dateStart', query.dateStart);
 	if (query.dateEnd) params.set('dateEnd', query.dateEnd);
 	if (scoped.echr.text) params.set('echrQ', scoped.echr.text);
@@ -420,10 +435,8 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 
 	query.keywords = splitList(params.get('keywords'));
 	query.eclis = splitList(params.get('eclis'));
-	const echrCursor = params.get('echrCursor');
-	if (echrCursor) query.echrCursor = echrCursor;
-	const rsCursor = params.get('rsCursor');
-	if (rsCursor) query.rsCursor = rsCursor;
+	const cursor = params.get('cursor') || params.get('echrCursor') || params.get('rsCursor');
+	if (cursor) query.cursor = cursor;
 	query.scoped.echr.keywords = splitList(params.get('echrKeywords'));
 	query.scoped.echr.eclis = splitList(params.get('echrEclis'));
 	query.scoped.rs.keywords = splitList(params.get('rsKeywords'));

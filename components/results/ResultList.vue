@@ -11,7 +11,10 @@ const props = defineProps<{
   selectedResultId?: string
   selectedIds: Set<string>
   page: number
-  totalPages: number
+  totalPages?: number | null
+  hasNext?: boolean
+  estimatedTotalPages?: number
+  totalIsExact?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -22,6 +25,7 @@ const emit = defineEmits<{
 
 const pageNumbers = computed(() => {
   const pages: (number | '...')[] = []
+  if (!props.totalPages) return pages
   if (props.totalPages <= 7) {
     for (let i = 1; i <= props.totalPages; i++) pages.push(i)
   } else {
@@ -34,6 +38,15 @@ const pageNumbers = computed(() => {
     pages.push(props.totalPages)
   }
   return pages
+})
+
+const pageLabel = computed(() => {
+  if (props.totalPages) return `Page ${props.page} of ${props.totalPages}`
+  if (props.estimatedTotalPages && props.estimatedTotalPages > 0) {
+    const suffix = props.totalIsExact ? '' : '+'
+    return `Page ${props.page} of ${props.estimatedTotalPages}${suffix}`
+  }
+  return `Page ${props.page}`
 })
 </script>
 
@@ -59,7 +72,7 @@ const pageNumbers = computed(() => {
     </div>
 
     <!-- Pagination -->
-    <div v-if="totalPages > 1" class="flex items-center justify-center gap-1 pt-4 pb-2">
+    <div v-if="(totalPages && totalPages > 1) || hasNext || page > 1" class="flex items-center justify-center gap-2 pt-4 pb-2">
       <Button
         variant="outline"
         size="icon"
@@ -70,24 +83,27 @@ const pageNumbers = computed(() => {
         <ChevronLeft class="h-4 w-4" />
       </Button>
 
-      <template v-for="p in pageNumbers" :key="p">
-        <span v-if="p === '...'" class="px-2 text-sm text-muted-foreground">...</span>
-        <Button
-          v-else
-          :variant="page === p ? 'default' : 'outline'"
-          size="sm"
-          class="h-8 w-8 p-0"
-          @click="emit('page', p as number)"
-        >
-          {{ p }}
-        </Button>
+      <template v-if="totalPages">
+        <template v-for="p in pageNumbers" :key="p">
+          <span v-if="p === '...'" class="px-2 text-sm text-muted-foreground">...</span>
+          <Button
+            v-else
+            :variant="page === p ? 'default' : 'outline'"
+            size="sm"
+            class="h-8 w-8 p-0"
+            @click="emit('page', p as number)"
+          >
+            {{ p }}
+          </Button>
+        </template>
       </template>
+      <span v-else class="px-2 text-sm text-muted-foreground">{{ pageLabel }}</span>
 
       <Button
         variant="outline"
         size="icon"
         class="h-8 w-8"
-        :disabled="page >= totalPages"
+        :disabled="totalPages ? page >= totalPages : !hasNext"
         @click="emit('page', page + 1)"
       >
         <ChevronRight class="h-4 w-4" />

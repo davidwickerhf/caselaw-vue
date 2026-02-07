@@ -37,6 +37,19 @@ const STOP_WORDS = new Set([
     'vs.',
     'v',
     'v.',
+    'de',
+    'het',
+    'een',
+    'en',
+    'of',
+    'van',
+    'voor',
+    'met',
+    'zonder',
+    'bij',
+    'tot',
+    'naar',
+    'op',
 ]);
 
 function normalizeWhitespace(text: string): string {

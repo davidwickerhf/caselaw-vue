@@ -5,6 +5,8 @@ import AiBadge from '~/components/shared/AiBadge.vue'
 
 defineProps<{
   total: number
+  totalIsExact?: boolean
+  hasMore?: boolean
   loadingMore?: boolean
   aiSummary?: string
   didYouMean?: string
@@ -23,7 +25,14 @@ const summaryExpanded = ref(false)
     <div class="flex items-center justify-between">
       <div class="text-sm text-muted-foreground flex items-center gap-2">
         <slot name="countPrefix" />
-        <span class="font-semibold text-foreground">{{ total }}</span> result{{ total !== 1 ? 's' : '' }} found
+        <template v-if="totalIsExact || !hasMore">
+          <span class="font-semibold text-foreground">{{ total }}</span>
+          result{{ total !== 1 ? 's' : '' }} found
+        </template>
+        <template v-else>
+          <span class="font-semibold text-foreground">{{ total }}+</span>
+          results found
+        </template>
         <span v-if="loadingMore" class="inline-flex items-center gap-1 text-xs text-muted-foreground">
           <Loader2 class="h-3 w-3 animate-spin" />
           loading more...

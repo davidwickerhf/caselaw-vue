@@ -64,19 +64,91 @@ const TITLE_ALIASES: Record<string, string> = {
     'abolition of death penalty': 'P6-1',
     'double jeopardy': 'P7-4',
     'ne bis in idem': 'P7-4',
+    'recht op leven': '2',
+    'verbod op foltering': '3',
+    'foltering': '3',
+    'onmenselijke behandeling': '3',
+    'vernederende behandeling': '3',
+    'vrijheid en veiligheid': '5',
+    'recht op vrijheid': '5',
+    'eerlijk proces': '6',
+    'recht op een eerlijk proces': '6',
+    'onschuldpresumptie': '6-2',
+    'geen straf zonder wet': '7',
+    'priveleven': '8',
+    'familieleven': '8',
+    'prive- en familieleven': '8',
+    'vrijheid van gedachte': '9',
+    'vrijheid van godsdienst': '9',
+    'vrijheid van meningsuiting': '10',
+    'meningsuiting': '10',
+    'vrijheid van vergadering': '11',
+    'vrijheid van vereniging': '11',
+    'recht om te huwen': '12',
+    'doeltreffend rechtsmiddel': '13',
+    'verbod op discriminatie': '14',
+    'bescherming van eigendom': 'P1-1',
+    'recht op onderwijs': 'P1-2',
+    'vrije verkiezingen': 'P1-3',
+    'vrijheid van verkeer': 'P4-2',
+    'collectieve uitzetting': 'P4-4',
+    'afschaffing van de doodstraf': 'P6-1',
 };
+
+function normalizeText(text: string): string {
+    return text
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+}
 
 // Sort aliases longest-first for matching
 const SORTED_ALIASES = Object.keys(TITLE_ALIASES).sort((a, b) => b.length - a.length);
 
 // Regex for explicit article references: "article 3", "art. 6-1", "art 5-1-a", "P1-1"
-const EXPLICIT_ARTICLE_RE = /\b(?:article|art\.?)\s*((?:P?\d+)(?:-\d+(?:-[a-z])?)?(?:\+(?:P?\d+)(?:-\d+(?:-[a-z])?)?)*)\b/gi;
+const EXPLICIT_ARTICLE_RE = /\b(?:article|artikel|art\.?)\s*((?:P?\d+)(?:-\d+(?:-[a-z])?)?(?:\+(?:P?\d+)(?:-\d+(?:-[a-z])?)?)*)\b/gi;
 const PROTOCOL_ARTICLE_RE = /\b(P\d+-\d+(?:-\d+)?(?:-[a-z])?)\b/g;
 
 // Context keywords for violation type
-const VIOLATION_WORDS = ['violation', 'violated', 'breach', 'breached', 'infringement', 'infringed'];
-const APPLIED_WORDS = ['applied', 'application', 'invoked', 'relied', 'applicable'];
-const NON_VIOLATION_WORDS = ['no violation', 'non-violation', 'non-violated', 'not violated', 'no breach'];
+const VIOLATION_WORDS = [
+    'violation',
+    'violated',
+    'breach',
+    'breached',
+    'infringement',
+    'infringed',
+    'schending',
+    'geschonden',
+    'schendt',
+    'inbreuk',
+    'overtreding',
+    'overtreden',
+];
+const APPLIED_WORDS = [
+    'applied',
+    'application',
+    'invoked',
+    'relied',
+    'applicable',
+    'toegepast',
+    'toepassing',
+    'ingeroepen',
+    'van toepassing',
+    'beriep',
+    'beroepen',
+];
+const NON_VIOLATION_WORDS = [
+    'no violation',
+    'non-violation',
+    'non-violated',
+    'not violated',
+    'no breach',
+    'geen schending',
+    'niet geschonden',
+    'geen overtreding',
+    'geen inbreuk',
+    'niet overtreden',
+];
 
 function detectContext(input: string, matchStart: number, matchEnd: number): ParsedTokenType {
     const surroundingStart = Math.max(0, matchStart - 40);
@@ -121,7 +193,7 @@ export type ArticleRecognizerResult = {
 
 function expandTriggerWithContext(input: string, start: number, end: number): [number, number] {
     const after = input.slice(end);
-    const contextRe = /^\s*(?:-|,)?\s*(?:no\s+violation|non-violation|non-violated|not\s+violated|violation|violated|breach|breached|applied|application|invoked)\b/i;
+    const contextRe = /^\s*(?:-|,)?\s*(?:no\s+violation|non-violation|non-violated|not\s+violated|violation|violated|breach|breached|applied|application|invoked|geen\s+schending|niet\s+geschonden|geen\s+inbreuk|niet\s+overtreden|schending|geschonden|inbreuk|overtreding|toegepast|toepassing|ingeroepen|van\s+toepassing)\b/i;
     const match = after.match(contextRe);
     if (match) {
         return [start, end + match[0].length];
@@ -197,9 +269,10 @@ export function recognizeArticles(input: string): ArticleRecognizerResult {
     }
 
     // 3. Title-based suggestions (require Tab to confirm)
-    const lowerInput = input.toLowerCase();
+    const normalizedInput = normalizeText(input);
     for (const alias of SORTED_ALIASES) {
-        const idx = lowerInput.indexOf(alias);
+        const normalizedAlias = normalizeText(alias);
+        const idx = normalizedInput.indexOf(normalizedAlias);
         if (idx === -1) continue;
 
         const start = idx;

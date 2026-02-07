@@ -4,15 +4,20 @@ function genId(): string {
     return Math.random().toString(36).slice(2, 10);
 }
 
-function tokenScope(token: ParsedToken): SourceScope {
+export function tokenScope(token: ParsedToken): SourceScope {
     switch (token.type) {
         case 'article_violated':
         case 'article_applied':
         case 'article_non_violated':
         case 'respondent_state':
+        case 'application_number':
         case 'importance':
-        case 'document_type':
-            return 'ECHR';
+        case 'document_type': {
+            const value = String(token.value || '').toUpperCase();
+            if (value === 'DEC' || value === 'OPI') return 'RS';
+            if (value.startsWith('HE')) return 'ECHR';
+            return 'ANY';
+        }
         case 'instance':
         case 'domain':
             return 'RS';
@@ -24,12 +29,13 @@ function tokenScope(token: ParsedToken): SourceScope {
 /**
  * Map a ParsedToken to a QueryBuilderRule.
  */
-function tokenToRule(token: ParsedToken): QueryBuilderRule | null {
+export function tokenToRule(token: ParsedToken): QueryBuilderRule | null {
     const fieldMap: Record<string, { field: string; operator: string }> = {
         article_violated: { field: 'article_violated', operator: 'equals' },
         article_applied: { field: 'article_applied', operator: 'equals' },
         article_non_violated: { field: 'article_non_violated', operator: 'equals' },
         respondent_state: { field: 'respondent_state', operator: 'equals' },
+        application_number: { field: 'application_number', operator: 'equals' },
         year: { field: 'year', operator: 'equals' },
         date_start: { field: 'year', operator: 'after' },
         date_end: { field: 'year', operator: 'before' },
@@ -38,17 +44,30 @@ function tokenToRule(token: ParsedToken): QueryBuilderRule | null {
         instance: { field: 'instance', operator: 'equals' },
         domain: { field: 'domain', operator: 'equals' },
         source: { field: 'source', operator: 'equals' },
+        ecli: { field: 'ecli', operator: 'equals' },
         keyword: { field: 'keywords', operator: 'contains' },
     };
 
     const mapping = fieldMap[token.type];
     if (!mapping) return null;
 
+    const value = token.value;
+    if (mapping.field === 'year' && (token.type === 'date_start' || token.type === 'date_end')) {
+        const year = value.slice(0, 4);
+        return {
+            id: token.id,
+            field: mapping.field,
+            operator: mapping.operator,
+            value: year,
+            sourceScope: tokenScope(token),
+        };
+    }
+
     return {
         id: token.id,
         field: mapping.field,
         operator: mapping.operator,
-        value: token.value,
+        value,
         sourceScope: tokenScope(token),
     };
 }
