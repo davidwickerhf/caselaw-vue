@@ -159,7 +159,7 @@ function countsToFacets(counts: FacetCounts): SearchFacets {
 /**
  * Compute facets from the full result set.
  */
-function computeFacets(cases: Citation[]): SearchFacets {
+export function computeFacets(cases: Citation[]): SearchFacets {
 	const facetMap = <T extends string | number>(
 		extractor: (c: Citation) => T | T[] | undefined
 	): FacetItem[] => {
@@ -238,7 +238,8 @@ function hasRules(group: QueryBuilderGroup): boolean {
 export async function executeSearch(
 	query: SearchQuery,
 	onUpdate: (result: SearchResult) => void,
-	seed?: { facets: SearchFacets; total: number; totalIsExact: boolean }
+	seed?: { facets: SearchFacets; total: number; totalIsExact: boolean },
+	onAccumulated?: (payload: { all: Citation[]; complete: boolean }) => void
 ): Promise<() => void> {
 	const pageSize = query.pageSize || DEFAULT_PAGE_SIZE;
 	const group = query.queryBuilderGroup || searchQueryToQueryBuilderGroup(query);
@@ -303,6 +304,7 @@ export async function executeSearch(
 					facets: computeFacets(filtered)
 				})
 			);
+			onAccumulated?.({ all: filtered, complete: !nextCursor });
 		};
 
 		addPage(result.citations);
@@ -327,6 +329,7 @@ export async function executeSearch(
 
 	const facetCounts = createFacetCounts();
 	addFacetCounts(facetCounts, result.citations);
+	const allCitations: Citation[] = [...result.citations];
 
 	const hasMore = !!result.nextCursor;
 	const baseTotal = (query.page - 1) * pageSize + result.citations.length;
@@ -343,6 +346,9 @@ export async function executeSearch(
 			facets: countsToFacets(facetCounts)
 		})
 	);
+	if (!hasMore) {
+		onAccumulated?.({ all: allCitations, complete: true });
+	}
 
 	if (query.page === 1 && !query.cursor && hasMore) {
 		let count = result.citations.length;
@@ -351,6 +357,7 @@ export async function executeSearch(
 			const pageResult = await fetchCombinedPage(query, effectiveGroup, pageSize, cursor);
 			count += pageResult.citations.length;
 			addFacetCounts(facetCounts, pageResult.citations);
+			allCitations.push(...pageResult.citations);
 			cursor = pageResult.nextCursor;
 			onUpdate(
 				buildSearchResult(result.citations, query, {
@@ -372,6 +379,7 @@ export async function executeSearch(
 					facets: countsToFacets(facetCounts)
 				})
 			);
+			onAccumulated?.({ all: allCitations, complete: true });
 		}
 	}
 

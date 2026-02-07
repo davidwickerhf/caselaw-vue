@@ -5,6 +5,7 @@ import Button from '~/components/ui/button/Button.vue'
 defineProps<{
   selectedCount: number
   totalCount: number
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -16,20 +17,56 @@ const emit = defineEmits<{
 
 <template>
   <div class="flex items-center gap-2">
-    <div v-if="selectedCount > 0" class="flex items-center gap-2 rounded-md bg-muted px-3 py-1.5">
-      <span class="text-xs font-medium">{{ selectedCount }} selected</span>
-      <Button variant="ghost" size="sm" class="h-6 px-2 text-xs gap-1" @click="emit('export', 'csv')">
+    <div
+      v-if="selectedCount > 0"
+      :class="[
+        'inline-flex items-center rounded-full border border-border/60 bg-muted/30 px-2 py-1 shadow-sm',
+        disabled ? 'opacity-40 pointer-events-none' : ''
+      ]"
+    >
+      <span class="px-2 text-[11px] font-semibold text-foreground">
+        {{ selectedCount }} selected
+      </span>
+      <div class="h-4 w-px bg-border/60" />
+      <button
+        class="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-all hover:text-foreground hover:bg-background/40"
+        :disabled="disabled"
+        @click="emit('export', 'csv')"
+      >
         <Download class="h-3 w-3" /> CSV
-      </Button>
-      <Button variant="ghost" size="sm" class="h-6 px-2 text-xs gap-1" @click="emit('export', 'json')">
+      </button>
+      <button
+        class="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-all hover:text-foreground hover:bg-background/40"
+        :disabled="disabled"
+        @click="emit('export', 'json')"
+      >
         <Download class="h-3 w-3" /> JSON
-      </Button>
-      <Button variant="ghost" size="icon" class="h-6 w-6" @click="emit('clear')">
+      </button>
+      <div class="h-4 w-px bg-border/60" />
+      <button
+        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-all hover:text-foreground hover:bg-background/40"
+        :disabled="disabled"
+        @click="emit('clear')"
+        aria-label="Clear selection"
+      >
         <X class="h-3 w-3" />
-      </Button>
+      </button>
     </div>
-    <Button v-else variant="ghost" size="sm" class="h-7 text-xs gap-1" @click="emit('selectAll')">
-      <Square class="h-3 w-3" /> Select All
-    </Button>
+
+    <div
+      v-else
+      :class="[
+        'inline-flex items-center rounded-full border border-border/60 bg-muted/30 p-1 shadow-sm',
+        disabled ? 'opacity-40 pointer-events-none' : ''
+      ]"
+    >
+      <button
+        class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold text-muted-foreground transition-all hover:text-foreground hover:bg-background/40"
+        :disabled="disabled"
+        @click="emit('selectAll')"
+      >
+        <Square class="h-3 w-3" /> Select All
+      </button>
+    </div>
   </div>
 </template>

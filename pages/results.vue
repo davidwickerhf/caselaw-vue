@@ -74,7 +74,7 @@ const marqueeRef = ref<HTMLElement | null>(null);
 const summaryRowRef = ref<HTMLElement | null>(null);
 const shouldScroll = ref(false);
 const isEditingSummary = ref(false);
-const invalidRuleIds = ref<Set<string>>(new Set());
+const invalidRuleKeys = ref<Set<string>>(new Set());
 const filterState = ref<Partial<SearchQuery>>({});
 let marqueeObserver: ResizeObserver | null = null;
 const ruleIndex = computed(() => {
@@ -294,14 +294,23 @@ function appendFilterParams(
 	if (filters.dateEnd) params.set("dateEnd", filters.dateEnd);
 }
 
-function setInvalid(ruleId: string, message: string | null) {
-	const next = new Set(invalidRuleIds.value);
+function invalidKey(ruleId: string, editType: "scope" | "value") {
+	return `${ruleId}:${editType}`;
+}
+
+function setInvalid(
+	ruleId: string,
+	editType: "scope" | "value",
+	message: string | null,
+) {
+	const next = new Set(invalidRuleKeys.value);
+	const key = invalidKey(ruleId, editType);
 	if (message) {
-		next.add(ruleId);
+		next.add(key);
 	} else {
-		next.delete(ruleId);
+		next.delete(key);
 	}
-	invalidRuleIds.value = next;
+	invalidRuleKeys.value = next;
 }
 
 function showValidationNotice(message: string) {
@@ -529,7 +538,8 @@ function applySummaryEdits() {
 	const edits = new Map<string, string>();
 	const scopeEdits = new Map<string, SourceScope>();
 	const scopeLabels = new Map<string, string>();
-	const revertTargets = new Map<string, string>();
+	const revertScopeTargets = new Map<string, string>();
+	const revertValueTargets = new Map<string, string>();
 	const errors: string[] = [];
 	const editedRuleIds = new Set<string>();
 	for (const node of nodes) {
@@ -542,12 +552,16 @@ function applySummaryEdits() {
 		if (editType === "scope") {
 			const scopeResult = validateScopeValue(rule, rawValue);
 			if (!scopeResult.valid || !scopeResult.scope) {
-				revertTargets.set(ruleId, SCOPE_LABELS[rule.sourceScope || "ANY"]);
-				setInvalid(ruleId, scopeResult.message || "Invalid data source.");
+				revertScopeTargets.set(ruleId, SCOPE_LABELS[rule.sourceScope || "ANY"]);
+				setInvalid(
+					ruleId,
+					"scope",
+					scopeResult.message || "Invalid data source.",
+				);
 				if (scopeResult.message) errors.push(scopeResult.message);
 				continue;
 			}
-			setInvalid(ruleId, null);
+			setInvalid(ruleId, "scope", null);
 			scopeEdits.set(ruleId, scopeResult.scope);
 			scopeLabels.set(ruleId, scopeResult.label || SCOPE_LABELS[scopeResult.scope]);
 			node.textContent = scopeResult.label || SCOPE_LABELS[scopeResult.scope];
@@ -557,30 +571,38 @@ function applySummaryEdits() {
 
 		const result = validateRuleValue(rule, rawValue);
 		if (!result.valid) {
-			revertTargets.set(ruleId, rule.value);
-			setInvalid(ruleId, result.message || "Invalid value.");
+			revertValueTargets.set(ruleId, rule.value);
+			setInvalid(ruleId, "value", result.message || "Invalid value.");
 			if (result.message) errors.push(result.message);
 			continue;
 		}
-		setInvalid(ruleId, null);
+		setInvalid(ruleId, "value", null);
 		const normalized = result.normalized ?? normalizeSummaryValue(rawValue);
 		edits.set(ruleId, normalized);
 		node.textContent = normalized;
 		editedRuleIds.add(ruleId);
 	}
 
-	if (revertTargets.size > 0) {
+	if (revertScopeTargets.size > 0 || revertValueTargets.size > 0) {
 		for (const node of nodes) {
 			const ruleId = node.dataset.ruleId;
 			if (!ruleId) continue;
-			const revertValue = revertTargets.get(ruleId);
-			if (revertValue !== undefined) {
-				node.textContent = revertValue;
+			const editType = node.dataset.edit;
+			if (editType === "scope") {
+				const revertValue = revertScopeTargets.get(ruleId);
+				if (revertValue !== undefined) {
+					node.textContent = revertValue;
+				}
+			} else {
+				const revertValue = revertValueTargets.get(ruleId);
+				if (revertValue !== undefined) {
+					node.textContent = revertValue;
+				}
 			}
 		}
 		const message = errors.length > 0 ? errors[0] : "Invalid value.";
 		showValidationNotice(message);
-		invalidRuleIds.value = new Set();
+		invalidRuleKeys.value = new Set();
 		return;
 	}
 
@@ -619,20 +641,34 @@ function applySummaryEdits() {
 		if (!editedRuleIds.has(rule.id)) continue;
 		const validation = validateRuleValue(rule, rule.value);
 		if (!validation.valid) {
-			setInvalid(rule.id, validation.message || "Invalid value.");
+			const original = ruleIndex.value.get(rule.id);
+			const scopeEdited = scopeEdits.has(rule.id);
+			const valueEdited = edits.has(rule.id);
+			if (scopeEdited && !valueEdited) {
+				setInvalid(
+					rule.id,
+					"scope",
+					validation.message || "Invalid value for selected dataset.",
+				);
+			} else {
+				setInvalid(rule.id, "value", validation.message || "Invalid value.");
+			}
 			for (const node of nodes) {
 				const ruleId = node.dataset.ruleId;
 				if (ruleId !== rule.id) continue;
-				const original = ruleIndex.value.get(ruleId);
 				if (!original) continue;
 				if (node.dataset.edit === "scope") {
-					node.textContent = SCOPE_LABELS[original.sourceScope || "ANY"];
-				} else {
-					node.textContent = original.value;
+					if (scopeEdited) {
+						node.textContent = SCOPE_LABELS[original.sourceScope || "ANY"];
+					}
+				} else if (node.dataset.edit === "value") {
+					if (valueEdited || !scopeEdited) {
+						node.textContent = original.value;
+					}
 				}
 			}
 			showValidationNotice(validation.message || "Invalid value.");
-			invalidRuleIds.value = new Set();
+			invalidRuleKeys.value = new Set();
 			return;
 		}
 	}
@@ -640,16 +676,17 @@ function applySummaryEdits() {
 	const rangeValidation = validateYearRanges(nextGroup);
 	if (!rangeValidation.valid) {
 		for (const ruleId of rangeValidation.ruleIds) {
-			setInvalid(ruleId, rangeValidation.message);
+			setInvalid(ruleId, "value", rangeValidation.message);
 		}
 		for (const node of nodes) {
 			const ruleId = node.dataset.ruleId;
 			if (!ruleId) continue;
+			if (node.dataset.edit !== "value") continue;
 			const rule = ruleIndex.value.get(ruleId);
 			if (rule) node.textContent = rule.value;
 		}
 		showValidationNotice(rangeValidation.message);
-		invalidRuleIds.value = new Set();
+		invalidRuleKeys.value = new Set();
 		return;
 	}
 
@@ -680,17 +717,17 @@ function handleSummaryInput(event: Event) {
 	if (editType === "scope") {
 		const scopeResult = validateScopeValue(rule, rawValue);
 		if (!scopeResult.valid) {
-			setInvalid(ruleId, scopeResult.message || "Invalid data source.");
+			setInvalid(ruleId, "scope", scopeResult.message || "Invalid data source.");
 		} else {
-			setInvalid(ruleId, null);
+			setInvalid(ruleId, "scope", null);
 		}
 		return;
 	}
 	const result = validateRuleValue(rule, rawValue);
 	if (!result.valid) {
-		setInvalid(ruleId, result.message || "Invalid value.");
+		setInvalid(ruleId, "value", result.message || "Invalid value.");
 	} else {
-		setInvalid(ruleId, null);
+		setInvalid(ruleId, "value", null);
 	}
 }
 
@@ -1031,7 +1068,14 @@ function handleFilterChange(partial: Partial<SearchQuery>) {
 
 function handlePageChange(page: number) {
 	const cursor = store.cursorHistory.value[page];
-	if (!clientFilterActive.value && page > 1 && !cursor) return;
+	if (
+		!clientFilterActive.value &&
+		page > 1 &&
+		!cursor &&
+		!store.hasCachedPage(page) &&
+		!store.hasFullCache()
+	)
+		return;
 	const requestGroup = buildEffectiveGroup(
 		smartSearch.queryBuilderGroup.value,
 		filterState.value,
@@ -1115,7 +1159,9 @@ function handleFindSimilar(citation: Citation) {
 														v-else-if="segment.type === 'scope'"
 														:class="[
 															'query-value query-scope',
-															invalidRuleIds.has(segment.ruleId)
+															invalidRuleKeys.has(
+																`${segment.ruleId}:scope`,
+															)
 																? 'query-value-invalid'
 																: '',
 														]"
@@ -1134,7 +1180,9 @@ function handleFindSimilar(citation: Citation) {
 														v-else
 														:class="[
 															'query-value',
-															invalidRuleIds.has(segment.ruleId)
+															invalidRuleKeys.has(
+																`${segment.ruleId}:value`,
+															)
 																? 'query-value-invalid'
 																: '',
 														]"
@@ -1277,6 +1325,7 @@ function handleFindSimilar(citation: Citation) {
 									:sort-by="store.query.value.sortBy"
 									:sort-direction="store.query.value.sortDirection"
 									:view-mode="viewMode"
+									:disabled="!store.isFullyLoaded.value"
 									@change="
 										(sortBy: string, dir: string) => {
 											store.resetPagination();
@@ -1309,6 +1358,7 @@ function handleFindSimilar(citation: Citation) {
 								<BulkActions
 									:selected-count="store.selectedCount.value"
 									:total-count="store.results.value.results.length"
+									:disabled="!store.isFullyLoaded.value"
 									@select-all="store.selectAll()"
 									@clear="store.clearSelection()"
 									@export="(format) => store.exportSelected(format)"
@@ -1327,6 +1377,7 @@ function handleFindSimilar(citation: Citation) {
 									:has-next="!!store.results.value.nextCursor"
 									:estimated-total-pages="estimatedTotalPages || undefined"
 									:total-is-exact="store.results.value.totalIsExact"
+									:disabled="!store.isFullyLoaded.value"
 									@select="handleSelectResult"
 									@toggle="(id) => store.toggleSelection(id)"
 									@page="handlePageChange"

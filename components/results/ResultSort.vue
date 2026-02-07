@@ -6,6 +6,7 @@ const props = defineProps<{
   sortBy: string
   sortDirection: string
   viewMode: 'compact' | 'expanded'
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +22,7 @@ const sortOptions = [
 ]
 
 function handleSort(value: string) {
+  if (props.disabled) return
   if (props.sortBy === value) {
     emit('change', value, props.sortDirection === 'desc' ? 'asc' : 'desc')
   } else {
@@ -31,14 +33,20 @@ function handleSort(value: string) {
 
 <template>
   <div class="flex items-center justify-between gap-4">
-    <div class="flex items-center gap-1">
-      <span class="text-xs text-muted-foreground mr-1">Sort:</span>
-      <Button
+    <div class="flex items-center gap-3">
+      <span class="text-[10px] uppercase tracking-wider text-muted-foreground/70">Sort by</span>
+    <div class="inline-flex items-center rounded-full border border-border/60 bg-muted/30 p-1 shadow-sm">
+      <button
         v-for="option in sortOptions"
         :key="option.value"
-        :variant="sortBy === option.value ? 'secondary' : 'ghost'"
-        size="sm"
-        class="h-7 text-xs gap-1"
+        :class="[
+          'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold transition-all',
+          sortBy === option.value
+            ? 'bg-foreground text-background shadow-sm'
+            : 'text-muted-foreground hover:text-foreground hover:bg-background/40',
+          disabled ? 'opacity-40 pointer-events-none' : ''
+        ]"
+        :disabled="disabled"
         @click="handleSort(option.value)"
       >
         {{ option.label }}
@@ -46,26 +54,35 @@ function handleSort(value: string) {
           <ArrowDown v-if="sortDirection === 'desc'" class="h-3 w-3" />
           <ArrowUp v-else class="h-3 w-3" />
         </template>
-      </Button>
+      </button>
+    </div>
     </div>
 
-    <div class="flex items-center gap-1">
-      <Button
-        :variant="viewMode === 'expanded' ? 'secondary' : 'ghost'"
-        size="icon"
-        class="h-7 w-7"
+    <div class="inline-flex items-center rounded-full border border-border/60 bg-muted/30 p-1 shadow-sm">
+      <button
+        :class="[
+          'inline-flex h-7 w-7 items-center justify-center rounded-full transition-all',
+          viewMode === 'expanded'
+            ? 'bg-foreground text-background shadow-sm'
+            : 'text-muted-foreground hover:text-foreground hover:bg-background/40'
+        ]"
         @click="emit('viewChange', 'expanded')"
+        aria-label="Expanded view"
       >
         <LayoutGrid class="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        :variant="viewMode === 'compact' ? 'secondary' : 'ghost'"
-        size="icon"
-        class="h-7 w-7"
+      </button>
+      <button
+        :class="[
+          'inline-flex h-7 w-7 items-center justify-center rounded-full transition-all',
+          viewMode === 'compact'
+            ? 'bg-foreground text-background shadow-sm'
+            : 'text-muted-foreground hover:text-foreground hover:bg-background/40'
+        ]"
         @click="emit('viewChange', 'compact')"
+        aria-label="Compact view"
       >
         <List class="h-3.5 w-3.5" />
-      </Button>
+      </button>
     </div>
   </div>
 </template>
