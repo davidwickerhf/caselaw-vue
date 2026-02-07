@@ -50,6 +50,31 @@ onClickOutside(containerEl, () => {
 const topSuggestion = computed(() => smartSearch.suggestions.value[0] ?? null)
 const hasParsedParameters = computed(() => smartSearch.allSuggestions.value.length > 0)
 
+type HighlightRange = { start: number; end: number }
+
+const highlightRanges = computed<HighlightRange[]>(() => {
+  if (props.chips) return []
+  const raw = smartSearch.highlightSuggestions.value
+    .map((s) => ({ start: s.triggerStart, end: s.triggerEnd }))
+    .filter((r) => r.end > r.start)
+    .sort((a, b) => a.start - b.start)
+
+  const merged: HighlightRange[] = []
+  for (const range of raw) {
+    if (merged.length === 0) {
+      merged.push({ ...range })
+      continue
+    }
+    const last = merged[merged.length - 1]
+    if (range.start <= last.end) {
+      last.end = Math.max(last.end, range.end)
+    } else {
+      merged.push({ ...range })
+    }
+  }
+  return merged
+})
+
 function normalizeExampleQuery(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim()
 }
@@ -103,10 +128,43 @@ function createTokenNode(token: ParsedToken): HTMLElement {
   return wrapper
 }
 
+function renderHighlightedText(text: string, ranges: HighlightRange[]) {
+  if (!editorEl.value) return
+  let cursor = 0
+  const len = text.length
+  for (const range of ranges) {
+    const start = Math.max(0, Math.min(range.start, len))
+    const end = Math.max(0, Math.min(range.end, len))
+    if (end <= start) continue
+    if (start > cursor) {
+      editorEl.value.append(document.createTextNode(text.slice(cursor, start)))
+    }
+    const span = document.createElement('span')
+    span.className = 'text-primary/80 font-medium'
+    span.textContent = text.slice(start, end)
+    editorEl.value.append(span)
+    cursor = end
+  }
+  if (cursor < len) {
+    editorEl.value.append(document.createTextNode(text.slice(cursor)))
+  }
+}
+
 function renderEditorFromSegments(segments: EditorSegment[]) {
   if (!editorEl.value) return
   const wasFocused = document.activeElement === editorEl.value
   editorEl.value.innerHTML = ''
+
+  if (!props.chips) {
+    const text = smartSearch.rawText.value
+    if (text) {
+      renderHighlightedText(text, highlightRanges.value)
+    }
+    if (wasFocused) {
+      placeCaretAtEnd(editorEl.value)
+    }
+    return
+  }
 
   for (const segment of segments) {
     if (segment.kind === 'text') {
@@ -333,6 +391,15 @@ watch(
   (next) => {
     if (suppressRender.value) return
     renderEditorFromSegments(next)
+  },
+  { deep: true }
+)
+
+watch(
+  () => highlightRanges.value,
+  () => {
+    if (suppressRender.value || props.chips) return
+    renderEditorFromSegments(smartSearch.segments.value)
   },
   { deep: true }
 )

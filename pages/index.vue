@@ -9,7 +9,6 @@ import AppFooter from '~/components/shared/AppFooter.vue'
 import { useSmartSearch } from '~/composables/useSmartSearch'
 import { queryBuilderGroupToSearchQuery } from '~/lib/utils/search-query'
 import { queryBuilderGroupToParams, paramsToQueryBuilderState } from '~/lib/utils/query-builder-url'
-import { parseNaturalLanguageToQueryBuilderGroup } from '~/lib/parser/nl-query-parser'
 import { useSearch } from '~/composables/useSearch'
 import { useHistory, type HistoryEntry } from '~/composables/useHistory'
 
@@ -45,7 +44,10 @@ function navigateToResults() {
   const params = queryBuilderGroupToParams(smartSearch.queryBuilderGroup.value, {
     pageSize: parsed.query.pageSize,
     cursor: parsed.query.cursor,
-    searchString: includeSearchString ? smartSearch.searchString.value : undefined
+    searchString: includeSearchString ? smartSearch.searchString.value : undefined,
+    sortBy: parsed.query.sortBy,
+    sortDirection: parsed.query.sortDirection,
+    page: parsed.query.page
   })
   router.push({ path: '/results', query: Object.fromEntries(params.entries()) })
 }
@@ -91,22 +93,6 @@ onMounted(() => {
 
   const parsed = paramsToQueryBuilderState(params)
   if (!parsed.state) {
-    const searchString = params.get('searchString')
-    if (searchString) {
-      const group = parseNaturalLanguageToQueryBuilderGroup(searchString)
-      const result = queryBuilderGroupToSearchQuery(group)
-      if (!result.query) {
-        submitError.value = result.error || 'Unable to parse query builder.'
-        return
-      }
-      smartSearch.setFromText(searchString)
-      smartSearch.setSearchString(searchString)
-      smartSearch.queryBuilderGroup.value = group
-      smartSearch.lastEditSource.value = 'searchbar'
-      store.setQuery({ ...result.query, queryBuilderGroup: group })
-      submitError.value = null
-      return
-    }
     submitError.value = parsed.error || 'Invalid URL parameters.'
     return
   }
@@ -121,14 +107,16 @@ onMounted(() => {
   const nextQuery = {
     ...result.query,
     pageSize: parsed.state.pageSize || result.query.pageSize,
-    cursor: parsed.state.cursor
+    cursor: parsed.state.cursor,
+    page: parsed.state.page || result.query.page,
+    sortBy: parsed.state.sortBy || result.query.sortBy,
+    sortDirection: parsed.state.sortDirection || result.query.sortDirection
   }
 
   if (parsed.state.searchString) {
     smartSearch.setFromText(parsed.state.searchString)
+    smartSearch.onQueryBuilderEdit(group)
     smartSearch.setSearchString(parsed.state.searchString)
-    smartSearch.queryBuilderGroup.value = group
-    smartSearch.lastEditSource.value = 'searchbar'
   } else {
     smartSearch.setFromText('')
     smartSearch.onQueryBuilderEdit(group)

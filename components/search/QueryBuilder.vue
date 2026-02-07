@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Brackets, Code, RotateCcw } from 'lucide-vue-next'
+import { Brackets, Code, RotateCcw, Check } from 'lucide-vue-next'
 import Button from '~/components/ui/button/Button.vue'
 import QueryBuilderGroupComp from './QueryBuilderGroup.vue'
 import { useSmartSearch } from '~/composables/useSmartSearch'
@@ -13,14 +13,19 @@ const props = withDefaults(defineProps<{
   showToggle?: boolean
   panelClass?: string
   transition?: 'default' | 'fade' | 'none'
+  showApply?: boolean
+  applyLabel?: string
 }>(), {
   showToggle: true,
   panelClass: '',
-  transition: 'default'
+  transition: 'default',
+  showApply: false,
+  applyLabel: 'Apply'
 })
 
 const emit = defineEmits<{
   reset: []
+  apply: []
 }>()
 
 const isOpen = defineModel<boolean>('open', { default: false })
@@ -101,6 +106,10 @@ function handleReset() {
   smartSearch.clearAll()
   emit('reset')
 }
+
+function handleApply() {
+  emit('apply')
+}
 </script>
 
 <template>
@@ -138,10 +147,22 @@ function handleReset() {
             </div>
             <h3 class="text-sm font-semibold text-foreground">Query Builder</h3>
           </div>
-          <Button variant="ghost" size="sm" class="h-7 text-xs gap-1.5 text-muted-foreground hover:text-foreground" @click="handleReset">
-            <RotateCcw class="h-3 w-3" />
-            Reset
-          </Button>
+          <div class="flex items-center gap-2">
+            <Button
+              v-if="props.showApply"
+              variant="default"
+              size="sm"
+              class="h-7 text-xs gap-1.5"
+              @click="handleApply"
+            >
+              <Check class="h-3 w-3" />
+              {{ props.applyLabel }}
+            </Button>
+            <Button variant="ghost" size="sm" class="h-7 text-xs gap-1.5 text-muted-foreground hover:text-foreground" @click="handleReset">
+              <RotateCcw class="h-3 w-3" />
+              Reset
+            </Button>
+          </div>
         </div>
 
         <QueryBuilderGroupComp

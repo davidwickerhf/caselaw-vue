@@ -1,4 +1,4 @@
-import type { Citation, SearchQuery, SearchResult, SearchFacets, FacetItem, QueryBuilderGroup } from '~/lib/types';
+import type { Citation, SearchQuery, SearchResult, SearchFacets, FacetItem, QueryBuilderGroup, QueryBuilderRule } from '~/lib/types';
 import { fetchCombinedPage, DEFAULT_PAGE_SIZE } from '~/lib/api/client';
 import { searchQueryToQueryBuilderGroup } from '~/lib/utils/search-query';
 
@@ -55,6 +55,87 @@ function addFacetCounts(counts: FacetCounts, cases: Citation[]) {
 			incrementCount(counts.domains, c.domain);
 		}
 	}
+}
+
+const CLIENT_ONLY_FIELDS = new Set(['article_violated', 'article_applied', 'article_non_violated']);
+
+function splitClientFilters(group: QueryBuilderGroup): { serverGroup: QueryBuilderGroup; clientRules: QueryBuilderRule[] } {
+	const clientRules: QueryBuilderRule[] = [];
+
+	const serverGroup: QueryBuilderGroup = {
+		...group,
+		rules: [],
+		groups: []
+	};
+
+	for (const rule of group.rules) {
+		if (CLIENT_ONLY_FIELDS.has(rule.field)) {
+			clientRules.push(rule);
+		} else {
+			serverGroup.rules.push(rule);
+		}
+	}
+
+	for (const sub of group.groups) {
+		const serverRules: QueryBuilderRule[] = [];
+		for (const rule of sub.rules) {
+			if (CLIENT_ONLY_FIELDS.has(rule.field)) {
+				clientRules.push(rule);
+			} else {
+				serverRules.push(rule);
+			}
+		}
+		if (serverRules.length > 0) {
+			serverGroup.groups.push({
+				...sub,
+				rules: serverRules,
+				groups: []
+			});
+		}
+	}
+
+	return { serverGroup, clientRules };
+}
+
+function normalizeArticleValue(value: string): string {
+	return value.trim().toUpperCase();
+}
+
+function matchesRule(list: string[] | undefined, rule: QueryBuilderRule): boolean {
+	if (!list || list.length === 0) {
+		return rule.operator === 'not_contains';
+	}
+	const target = normalizeArticleValue(rule.value || '');
+	if (!target) return false;
+	const normalized = list.map((item) => normalizeArticleValue(item));
+
+	if (rule.operator === 'not_contains') {
+		return !normalized.some((item) => item.includes(target));
+	}
+
+	if (rule.operator === 'contains') {
+		return normalized.some((item) => item.includes(target));
+	}
+
+	return normalized.some((item) => item === target);
+}
+
+function applyClientFilters(citations: Citation[], rules: QueryBuilderRule[]): Citation[] {
+	if (rules.length === 0) return citations;
+	return citations.filter((citation) => {
+		return rules.every((rule) => {
+			switch (rule.field) {
+				case 'article_violated':
+					return matchesRule(citation.article_violated, rule);
+				case 'article_applied':
+					return matchesRule(citation.article_applied, rule);
+				case 'article_non_violated':
+					return matchesRule(citation.article_non_violated, rule);
+				default:
+					return true;
+			}
+		});
+	});
 }
 
 function countsToFacets(counts: FacetCounts): SearchFacets {
@@ -161,16 +242,26 @@ export async function executeSearch(
 ): Promise<() => void> {
 	const pageSize = query.pageSize || DEFAULT_PAGE_SIZE;
 	const group = query.queryBuilderGroup || searchQueryToQueryBuilderGroup(query);
+	const { serverGroup, clientRules } = splitClientFilters(group);
+	const clientFiltering = clientRules.length > 0;
+	const effectiveGroup = (serverGroup.rules.length === 0 && serverGroup.groups.length === 0)
+		? {
+			...serverGroup,
+			rules: [{ id: 'source-any', field: 'source', operator: 'equals', value: 'ANY', sourceScope: 'ANY' }],
+			groups: []
+		}
+		: serverGroup;
 	let cancelled = false;
 	if (!hasRules(group)) {
 		onUpdate(buildSearchResult([], query, { total: 0, totalIsExact: true, facets: computeFacets([]) }));
 		return () => {};
 	}
 
-	const result = await fetchCombinedPage(query, group, pageSize, query.cursor);
+	const initialCursor = clientFiltering ? undefined : query.cursor;
+	const result = await fetchCombinedPage(query, effectiveGroup, pageSize, initialCursor);
 	if (cancelled) return () => {};
 
-	if (query.page > 1 && seed) {
+	if (!clientFiltering && query.page > 1 && seed) {
 		onUpdate(
 			buildSearchResult(result.citations, query, {
 				nextCursor: result.nextCursor,
@@ -179,6 +270,56 @@ export async function executeSearch(
 				facets: seed.facets
 			})
 		);
+		return () => {
+			cancelled = true;
+		};
+	}
+
+	if (clientFiltering) {
+		const seen = new Set<string>();
+		const accumulated: Citation[] = [];
+
+		const addPage = (page: Citation[]) => {
+			for (const item of page) {
+				if (seen.has(item.id)) continue;
+				seen.add(item.id);
+				accumulated.push(item);
+			}
+		};
+
+		const updateFilteredResult = (nextCursor?: string) => {
+			const filtered = applyClientFilters(accumulated, clientRules);
+			const start = (query.page - 1) * pageSize;
+			const pageSlice = filtered.slice(start, start + pageSize);
+			const total = filtered.length;
+			const totalIsExact = !nextCursor;
+			const hasMore = total > query.page * pageSize || !!nextCursor;
+			onUpdate(
+				buildSearchResult(pageSlice, query, {
+					nextCursor: hasMore ? 'client-more' : undefined,
+					total,
+					totalIsExact,
+					loadingMore: !!nextCursor,
+					facets: computeFacets(filtered)
+				})
+			);
+		};
+
+		addPage(result.citations);
+		updateFilteredResult(result.nextCursor);
+
+		let cursor = result.nextCursor;
+		while (cursor && !cancelled) {
+			const pageResult = await fetchCombinedPage(query, effectiveGroup, pageSize, cursor);
+			addPage(pageResult.citations);
+			cursor = pageResult.nextCursor;
+			updateFilteredResult(cursor);
+		}
+
+		if (!cancelled) {
+			updateFilteredResult(undefined);
+		}
+
 		return () => {
 			cancelled = true;
 		};
@@ -207,7 +348,7 @@ export async function executeSearch(
 		let count = result.citations.length;
 		let cursor = result.nextCursor;
 		while (cursor && !cancelled) {
-			const pageResult = await fetchCombinedPage(query, group, pageSize, cursor);
+			const pageResult = await fetchCombinedPage(query, effectiveGroup, pageSize, cursor);
 			count += pageResult.citations.length;
 			addFacetCounts(facetCounts, pageResult.citations);
 			cursor = pageResult.nextCursor;

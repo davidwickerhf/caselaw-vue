@@ -30,6 +30,12 @@ function copyEcli() {
   setTimeout(() => (copied.value = false), 2000)
 }
 
+function openOriginalDocument() {
+  if (!props.citation?.url_publication) return
+  if (typeof window === 'undefined') return
+  window.open(props.citation.url_publication, '_blank')
+}
+
 const date = computed(() => props.citation?.date || props.citation?.date_judgment || '')
 const importanceLabel = computed(() =>
   props.citation?.importance === 1
@@ -187,7 +193,7 @@ const importanceLabel = computed(() =>
 
         <!-- Actions -->
         <div class="flex flex-col gap-2">
-          <Button variant="outline" size="sm" class="justify-start gap-2" @click="window.open(citation!.url_publication, '_blank')">
+          <Button variant="outline" size="sm" class="justify-start gap-2" @click="openOriginalDocument">
             <ExternalLink class="h-3.5 w-3.5" />
             View Original Document
           </Button>

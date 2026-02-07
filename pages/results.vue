@@ -29,16 +29,27 @@ import { useSmartSearch } from "~/composables/useSmartSearch";
 import { useSearch } from "~/composables/useSearch";
 import { useHistory } from "~/composables/useHistory";
 import type { Citation, SearchQuery, QueryBuilderGroup } from "~/lib/types";
+import { createDefaultSearchQuery } from "~/lib/types";
 import {
 	queryBuilderGroupToSearchQuery,
 	searchQueryToQueryBuilderGroup,
+	paramsToSearchQuery,
 } from "~/lib/utils/search-query";
 import {
 	paramsToQueryBuilderState,
 	queryBuilderGroupToParams,
 } from "~/lib/utils/query-builder-url";
-import { summarizeQueryBuilder } from "~/lib/utils/query-summary";
+import { buildQuerySummarySegments } from "~/lib/utils/query-summary";
 import { parseNaturalLanguageToQueryBuilderGroup } from "~/lib/parser/nl-query-parser";
+import {
+	ECHR_ARTICLES,
+	RECHTSPRAAK_DOMAINS,
+	RECHTSPRAAK_INSTANCES,
+	RESPONDENT_STATE_CODES,
+} from "~/lib/utils/constants";
+import { toast } from "vue-sonner";
+import { defaultScopeForField, isFieldAllowed } from "~/lib/utils/query-builder-config";
+import type { SourceScope } from "~/lib/types";
 
 const route = useRoute();
 const router = useRouter();
@@ -52,12 +63,51 @@ const routeError = ref<string | null>(null);
 const syncingRoute = ref(false);
 const syncingSmartSearch = ref(false);
 const queryBuilderOpen = ref(false);
+const lastAppliedSignature = ref("");
 const summaryText = computed(() =>
-	summarizeQueryBuilder(smartSearch.queryBuilderGroup.value),
+	summarySegments.value.map((seg) => seg.text).join(""),
+);
+const summarySegments = computed(() =>
+	buildQuerySummarySegments(smartSearch.queryBuilderGroup.value),
 );
 const marqueeRef = ref<HTMLElement | null>(null);
+const summaryRowRef = ref<HTMLElement | null>(null);
 const shouldScroll = ref(false);
+const isEditingSummary = ref(false);
+const invalidRuleIds = ref<Set<string>>(new Set());
+const filterState = ref<Partial<SearchQuery>>({});
 let marqueeObserver: ResizeObserver | null = null;
+const ruleIndex = computed(() => {
+	const map = new Map<string, QueryBuilderGroup["rules"][number]>();
+	const add = (group: QueryBuilderGroup) => {
+		group.rules.forEach((rule) => map.set(rule.id, rule));
+		group.groups.forEach((sub) => add(sub));
+	};
+	add(smartSearch.queryBuilderGroup.value);
+	return map;
+});
+const filterQuery = computed(() =>
+	applyFilterState(createDefaultSearchQuery(), filterState.value),
+);
+const CLIENT_ONLY_FIELDS = new Set([
+	"article_violated",
+	"article_applied",
+	"article_non_violated",
+]);
+const clientFilterActive = computed(() => {
+	if (
+		filterState.value.articleViolated?.length ||
+		filterState.value.articleApplied?.length ||
+		filterState.value.articleNonViolated?.length
+	) {
+		return true;
+	}
+	const rules = [
+		...smartSearch.queryBuilderGroup.value.rules,
+		...smartSearch.queryBuilderGroup.value.groups.flatMap((g) => g.rules),
+	];
+	return rules.some((rule) => CLIENT_ONLY_FIELDS.has(rule.field));
+});
 
 function updateMarquee() {
 	if (!marqueeRef.value) {
@@ -75,6 +125,581 @@ function updateMarquee() {
 	const textWidth = span.scrollWidth;
 	shouldScroll.value = textWidth > containerWidth * 1.25;
 }
+
+function normalizeSummaryValue(value: string): string {
+	return value.replace(/\s+/g, " ").trim();
+}
+
+const ARTICLE_SET = new Set(ECHR_ARTICLES.map((a) => a.number.toUpperCase()));
+const DOMAIN_SET = new Set(RECHTSPRAAK_DOMAINS.map((d) => d.toLowerCase()));
+const INSTANCE_SET = new Set(RECHTSPRAAK_INSTANCES.map((i) => i.toLowerCase()));
+const STATE_NAME_SET = new Set(Object.keys(RESPONDENT_STATE_CODES).map((n) => n.toLowerCase()));
+const STATE_CODE_MAP = new Map(
+	Object.entries(RESPONDENT_STATE_CODES).map(([name, code]) => [code.toUpperCase(), name]),
+);
+const DOC_TYPES_ECHR = new Set([
+	"HEJUD",
+	"HEDEC",
+	"HECOM",
+	"HEINF",
+	"HECJUD",
+	"HECDEC",
+	"HECCOM",
+	"HECINF",
+]);
+const DOC_TYPES_RS = new Set(["DEC", "OPI"]);
+const SOURCE_VALUES = new Set([
+	"RS",
+	"RECHTSPRAAK",
+	"ECHR",
+	"HUDOC",
+	"ANY",
+	"BOTH",
+	"ALL",
+]);
+const SCOPE_LABELS: Record<SourceScope, string> = {
+	ANY: "Any",
+	ECHR: "ECHR",
+	RS: "Rechtspraak",
+};
+const FILTER_KEYS: (keyof SearchQuery)[] = [
+	"sources",
+	"articleViolated",
+	"articleApplied",
+	"articleNonViolated",
+	"respondentState",
+	"documentType",
+	"importance",
+	"instances",
+	"domains",
+	"dateStart",
+	"dateEnd",
+];
+
+function hasFilterKey(
+	filters: Partial<SearchQuery>,
+	key: keyof SearchQuery,
+): boolean {
+	return Object.prototype.hasOwnProperty.call(filters, key);
+}
+
+function extractFilterState(query: SearchQuery): Partial<SearchQuery> {
+	const next: Partial<SearchQuery> = {};
+	if (query.sources?.length) next.sources = [...query.sources];
+	if (query.articleViolated.length) next.articleViolated = [...query.articleViolated];
+	if (query.articleApplied.length) next.articleApplied = [...query.articleApplied];
+	if (query.articleNonViolated.length)
+		next.articleNonViolated = [...query.articleNonViolated];
+	if (query.respondentState.length)
+		next.respondentState = [...query.respondentState];
+	if (query.documentType.length) next.documentType = [...query.documentType];
+	if (query.importance.length) next.importance = [...query.importance];
+	if (query.instances.length) next.instances = [...query.instances];
+	if (query.domains.length) next.domains = [...query.domains];
+	if (query.dateStart) next.dateStart = query.dateStart;
+	if (query.dateEnd) next.dateEnd = query.dateEnd;
+	return next;
+}
+
+function applyFilterState(
+	base: SearchQuery,
+	filters: Partial<SearchQuery>,
+): SearchQuery {
+	const next: SearchQuery = { ...base, scoped: base.scoped };
+	for (const key of FILTER_KEYS) {
+		if (!hasFilterKey(filters, key)) continue;
+		const value = filters[key];
+		if (Array.isArray(value)) {
+			(next as SearchQuery)[key] = [...value] as never;
+		} else {
+			(next as SearchQuery)[key] = value as never;
+		}
+	}
+	return next;
+}
+
+function filterStateToRules(filters: Partial<SearchQuery>) {
+	const empty = Object.keys(filters).length === 0;
+	if (empty) return [];
+	const filterQuery = createDefaultSearchQuery();
+	for (const key of FILTER_KEYS) {
+		if (!hasFilterKey(filters, key)) continue;
+		const value = filters[key];
+		if (Array.isArray(value)) {
+			(filterQuery as SearchQuery)[key] = [...value] as never;
+		} else {
+			(filterQuery as SearchQuery)[key] = value as never;
+		}
+	}
+	const group = searchQueryToQueryBuilderGroup(filterQuery);
+	return group.rules
+		.filter((rule) => String(rule.value || "").trim().length > 0)
+		.map((rule) => {
+			const next = { ...rule };
+			if (
+				(next.field === "article_violated" ||
+					next.field === "article_applied" ||
+					next.field === "article_non_violated") &&
+				next.operator === "equals"
+			) {
+				next.operator = "contains";
+			}
+			if (!isFieldAllowed(next.sourceScope, next.field)) {
+				next.sourceScope = defaultScopeForField(next.field);
+			}
+			return next;
+		});
+}
+
+function buildEffectiveGroup(
+	baseGroup: QueryBuilderGroup,
+	filters: Partial<SearchQuery>,
+): QueryBuilderGroup {
+	const filterRules = filterStateToRules(filters);
+	if (filterRules.length === 0) return baseGroup;
+	return {
+		...baseGroup,
+		rules: [...baseGroup.rules, ...filterRules],
+		groups: baseGroup.groups.map((group) => ({
+			...group,
+			rules: [...group.rules],
+			groups: [],
+		})),
+	};
+}
+
+function appendFilterParams(
+	params: URLSearchParams,
+	filters: Partial<SearchQuery>,
+) {
+	const setList = (key: string, value?: string[] | number[]) => {
+		if (!value || value.length === 0) return;
+		params.set(key, value.join(","));
+	};
+	if (filters.sources && filters.sources.length) {
+		params.set("sources", filters.sources.join(","));
+	}
+	setList("articleViolated", filters.articleViolated as string[] | undefined);
+	setList("articleApplied", filters.articleApplied as string[] | undefined);
+	setList(
+		"articleNonViolated",
+		filters.articleNonViolated as string[] | undefined,
+	);
+	setList("respondentState", filters.respondentState as string[] | undefined);
+	setList("documentType", filters.documentType as string[] | undefined);
+	setList("instances", filters.instances as string[] | undefined);
+	setList("domains", filters.domains as string[] | undefined);
+	setList("importance", filters.importance as number[] | undefined);
+	if (filters.dateStart) params.set("dateStart", filters.dateStart);
+	if (filters.dateEnd) params.set("dateEnd", filters.dateEnd);
+}
+
+function setInvalid(ruleId: string, message: string | null) {
+	const next = new Set(invalidRuleIds.value);
+	if (message) {
+		next.add(ruleId);
+	} else {
+		next.delete(ruleId);
+	}
+	invalidRuleIds.value = next;
+}
+
+function showValidationNotice(message: string) {
+	toast.error(message, { duration: 2400, closeButton: true });
+}
+
+function parseScopeInput(raw: string): { scope: SourceScope | null; label?: string } {
+	const normalized = normalizeSummaryValue(raw).toLowerCase();
+	if (!normalized) return { scope: null };
+	if (["any", "all", "both"].includes(normalized)) return { scope: "ANY", label: SCOPE_LABELS.ANY };
+	if (["echr", "hudoc", "ehrm"].includes(normalized)) return { scope: "ECHR", label: SCOPE_LABELS.ECHR };
+	if (["rechtspraak", "rs", "rechtspraak.nl"].includes(normalized)) return { scope: "RS", label: SCOPE_LABELS.RS };
+	return { scope: null };
+}
+
+function validateScopeValue(
+	rule: QueryBuilderGroup["rules"][number],
+	value: string,
+): { valid: boolean; scope?: SourceScope; label?: string; message?: string } {
+	const parsed = parseScopeInput(value);
+	if (!parsed.scope) {
+		return { valid: false, message: "Unknown data source." };
+	}
+	if (!isFieldAllowed(parsed.scope, rule.field)) {
+		const label = parsed.label || SCOPE_LABELS[parsed.scope];
+		return {
+			valid: false,
+			message: `The field "${rule.field}" is not available for ${label}.`,
+		};
+	}
+	return { valid: true, scope: parsed.scope, label: parsed.label };
+}
+
+function validateRuleValue(
+	rule: QueryBuilderGroup["rules"][number],
+	value: string,
+): { valid: boolean; normalized?: string; message?: string } {
+	const trimmed = normalizeSummaryValue(value);
+	if (!trimmed) {
+		return { valid: false, message: "Value cannot be empty." };
+	}
+
+	switch (rule.field) {
+		case "year": {
+			if (!/^\d{4}$/.test(trimmed)) {
+				return { valid: false, message: "Year must be a 4-digit value." };
+			}
+			const year = Number(trimmed);
+			const currentYear = new Date().getFullYear();
+			if (year < 1900 || year > currentYear) {
+				return { valid: false, message: "Year must not be in the future." };
+			}
+			return { valid: true, normalized: trimmed };
+		}
+		case "importance": {
+			if (!/^[1-4]$/.test(trimmed)) {
+				return { valid: false, message: "Importance must be 1 to 4." };
+			}
+			return { valid: true, normalized: trimmed };
+		}
+		case "respondent_state": {
+			const normalized = trimmed.toLowerCase();
+			if (STATE_NAME_SET.has(normalized)) {
+				const properName =
+					Object.keys(RESPONDENT_STATE_CODES).find(
+						(name) => name.toLowerCase() === normalized,
+					) || trimmed;
+				return { valid: true, normalized: properName };
+			}
+			const code = trimmed.toUpperCase();
+			if (STATE_CODE_MAP.has(code)) {
+				return { valid: true, normalized: STATE_CODE_MAP.get(code) };
+			}
+			return { valid: false, message: "Unknown respondent state." };
+		}
+		case "article_violated":
+		case "article_applied":
+		case "article_non_violated": {
+			const article = trimmed.toUpperCase();
+			if (!ARTICLE_SET.has(article)) {
+				return { valid: false, message: "Unknown article reference." };
+			}
+			return { valid: true, normalized: article };
+		}
+		case "document_type": {
+			const valueUpper = trimmed.toUpperCase();
+			const scope = rule.sourceScope || "ANY";
+			if (scope === "ECHR" && !DOC_TYPES_ECHR.has(valueUpper)) {
+				return { valid: false, message: "Invalid ECHR document type." };
+			}
+			if (scope === "RS" && !DOC_TYPES_RS.has(valueUpper)) {
+				return { valid: false, message: "Invalid Rechtspraak document type." };
+			}
+			if (scope === "ANY" && !DOC_TYPES_ECHR.has(valueUpper) && !DOC_TYPES_RS.has(valueUpper)) {
+				return { valid: false, message: "Invalid document type." };
+			}
+			return { valid: true, normalized: valueUpper };
+		}
+		case "instance": {
+			const normalized = trimmed.toLowerCase();
+			if (!INSTANCE_SET.has(normalized)) {
+				return { valid: false, message: "Unknown court instance." };
+			}
+			const proper =
+				RECHTSPRAAK_INSTANCES.find((item) => item.toLowerCase() === normalized) ||
+				trimmed;
+			return { valid: true, normalized: proper };
+		}
+		case "domain": {
+			const normalized = trimmed.toLowerCase();
+			if (!DOMAIN_SET.has(normalized)) {
+				return { valid: false, message: "Unknown legal domain." };
+			}
+			const proper =
+				RECHTSPRAAK_DOMAINS.find((item) => item.toLowerCase() === normalized) ||
+				trimmed;
+			return { valid: true, normalized: proper };
+		}
+		case "application_number": {
+			if (!/^\d{1,6}\/\d{2}$/.test(trimmed)) {
+				return { valid: false, message: "Application number must look like 12345/67." };
+			}
+			return { valid: true, normalized: trimmed };
+		}
+		case "ecli": {
+			if (!/^ECLI:[A-Z]{2}:[A-Z0-9]{2,}:.+$/i.test(trimmed)) {
+				return { valid: false, message: "ECLI must start with ECLI:XX:..." };
+			}
+			return { valid: true, normalized: trimmed.toUpperCase() };
+		}
+		case "source": {
+			const upper = trimmed.toUpperCase();
+			if (!SOURCE_VALUES.has(upper)) {
+				return { valid: false, message: "Invalid data source." };
+			}
+			return { valid: true, normalized: upper };
+		}
+		default:
+			return { valid: true, normalized: trimmed };
+	}
+}
+
+function validateYearRanges(
+	group: QueryBuilderGroup,
+): { valid: true } | { valid: false; message: string; ruleIds: string[] } {
+	const buckets = new Map<
+		string,
+		{ after?: number; before?: number; equals?: Set<number>; ruleIds: string[] }
+	>();
+	const allRules = [...group.rules, ...group.groups.flatMap((sub) => sub.rules)];
+
+	for (const rule of allRules) {
+		if (rule.field !== "year") continue;
+		const year = Number(rule.value);
+		if (!Number.isInteger(year)) continue;
+		const scope = rule.sourceScope || "ANY";
+		const bucket =
+			buckets.get(scope) || ({ ruleIds: [], equals: new Set<number>() } as {
+				after?: number;
+				before?: number;
+				equals?: Set<number>;
+				ruleIds: string[];
+			});
+		bucket.ruleIds.push(rule.id);
+
+		if (rule.operator === "after") {
+			bucket.after = bucket.after === undefined ? year : Math.max(bucket.after, year);
+		} else if (rule.operator === "before") {
+			bucket.before = bucket.before === undefined ? year : Math.min(bucket.before, year);
+		} else if (rule.operator === "equals") {
+			bucket.equals?.add(year);
+		}
+		buckets.set(scope, bucket);
+	}
+
+	for (const bucket of buckets.values()) {
+		const equalsYears = Array.from(bucket.equals || []);
+		if (equalsYears.length > 1) {
+			return {
+				valid: false,
+				message: "Conflicting year equals filters.",
+				ruleIds: bucket.ruleIds,
+			};
+		}
+		if (
+			bucket.after !== undefined &&
+			bucket.before !== undefined &&
+			bucket.after > bucket.before
+		) {
+			return {
+				valid: false,
+				message: "Year after cannot be later than year before.",
+				ruleIds: bucket.ruleIds,
+			};
+		}
+		if (equalsYears.length === 1) {
+			const eq = equalsYears[0];
+			if (bucket.after !== undefined && bucket.after > eq) {
+				return {
+					valid: false,
+					message: "Year after conflicts with year equals.",
+					ruleIds: bucket.ruleIds,
+				};
+			}
+			if (bucket.before !== undefined && bucket.before < eq) {
+				return {
+					valid: false,
+					message: "Year before conflicts with year equals.",
+					ruleIds: bucket.ruleIds,
+				};
+			}
+		}
+	}
+
+	return { valid: true };
+}
+
+function applySummaryEdits() {
+	if (!summaryRowRef.value) return;
+	const nodes = Array.from(
+		summaryRowRef.value.querySelectorAll<HTMLElement>("[data-rule-id]"),
+	);
+	if (nodes.length === 0) return;
+
+	const edits = new Map<string, string>();
+	const scopeEdits = new Map<string, SourceScope>();
+	const scopeLabels = new Map<string, string>();
+	const revertTargets = new Map<string, string>();
+	const errors: string[] = [];
+	const editedRuleIds = new Set<string>();
+	for (const node of nodes) {
+		const ruleId = node.dataset.ruleId;
+		if (!ruleId) continue;
+		const rule = ruleIndex.value.get(ruleId);
+		if (!rule) continue;
+		const rawValue = node.textContent || "";
+		const editType = node.dataset.edit;
+		if (editType === "scope") {
+			const scopeResult = validateScopeValue(rule, rawValue);
+			if (!scopeResult.valid || !scopeResult.scope) {
+				revertTargets.set(ruleId, SCOPE_LABELS[rule.sourceScope || "ANY"]);
+				setInvalid(ruleId, scopeResult.message || "Invalid data source.");
+				if (scopeResult.message) errors.push(scopeResult.message);
+				continue;
+			}
+			setInvalid(ruleId, null);
+			scopeEdits.set(ruleId, scopeResult.scope);
+			scopeLabels.set(ruleId, scopeResult.label || SCOPE_LABELS[scopeResult.scope]);
+			node.textContent = scopeResult.label || SCOPE_LABELS[scopeResult.scope];
+			editedRuleIds.add(ruleId);
+			continue;
+		}
+
+		const result = validateRuleValue(rule, rawValue);
+		if (!result.valid) {
+			revertTargets.set(ruleId, rule.value);
+			setInvalid(ruleId, result.message || "Invalid value.");
+			if (result.message) errors.push(result.message);
+			continue;
+		}
+		setInvalid(ruleId, null);
+		const normalized = result.normalized ?? normalizeSummaryValue(rawValue);
+		edits.set(ruleId, normalized);
+		node.textContent = normalized;
+		editedRuleIds.add(ruleId);
+	}
+
+	if (revertTargets.size > 0) {
+		for (const node of nodes) {
+			const ruleId = node.dataset.ruleId;
+			if (!ruleId) continue;
+			const revertValue = revertTargets.get(ruleId);
+			if (revertValue !== undefined) {
+				node.textContent = revertValue;
+			}
+		}
+		const message = errors.length > 0 ? errors[0] : "Invalid value.";
+		showValidationNotice(message);
+		invalidRuleIds.value = new Set();
+		return;
+	}
+
+	let changed = false;
+	const updateRules = (rules: QueryBuilderGroup["rules"]) =>
+		rules.map((rule) => {
+			const nextScope = scopeEdits.get(rule.id);
+			const nextValue = edits.get(rule.id);
+			if (nextScope === undefined && nextValue === undefined) return rule;
+			const updated = {
+				...rule,
+				sourceScope: nextScope || rule.sourceScope,
+				value: nextValue ?? rule.value,
+			};
+			if (updated.sourceScope === rule.sourceScope && updated.value === rule.value) return rule;
+			changed = true;
+			return updated;
+		});
+
+	const nextGroup: QueryBuilderGroup = {
+		...smartSearch.queryBuilderGroup.value,
+		rules: updateRules(smartSearch.queryBuilderGroup.value.rules),
+		groups: smartSearch.queryBuilderGroup.value.groups.map((group) => ({
+			...group,
+			rules: updateRules(group.rules),
+			groups: [],
+		})),
+	};
+
+	if (!changed) return;
+
+	for (const rule of [
+		...nextGroup.rules,
+		...nextGroup.groups.flatMap((group) => group.rules),
+	]) {
+		if (!editedRuleIds.has(rule.id)) continue;
+		const validation = validateRuleValue(rule, rule.value);
+		if (!validation.valid) {
+			setInvalid(rule.id, validation.message || "Invalid value.");
+			for (const node of nodes) {
+				const ruleId = node.dataset.ruleId;
+				if (ruleId !== rule.id) continue;
+				const original = ruleIndex.value.get(ruleId);
+				if (!original) continue;
+				if (node.dataset.edit === "scope") {
+					node.textContent = SCOPE_LABELS[original.sourceScope || "ANY"];
+				} else {
+					node.textContent = original.value;
+				}
+			}
+			showValidationNotice(validation.message || "Invalid value.");
+			invalidRuleIds.value = new Set();
+			return;
+		}
+	}
+
+	const rangeValidation = validateYearRanges(nextGroup);
+	if (!rangeValidation.valid) {
+		for (const ruleId of rangeValidation.ruleIds) {
+			setInvalid(ruleId, rangeValidation.message);
+		}
+		for (const node of nodes) {
+			const ruleId = node.dataset.ruleId;
+			if (!ruleId) continue;
+			const rule = ruleIndex.value.get(ruleId);
+			if (rule) node.textContent = rule.value;
+		}
+		showValidationNotice(rangeValidation.message);
+		invalidRuleIds.value = new Set();
+		return;
+	}
+
+	smartSearch.onQueryBuilderEdit(nextGroup);
+	applyQueryBuilderEdits();
+}
+
+function handleSummaryFocusIn() {
+	isEditingSummary.value = true;
+}
+
+function handleSummaryFocusOut() {
+	globalThis.setTimeout(() => {
+		if (summaryRowRef.value?.contains(document.activeElement)) return;
+		isEditingSummary.value = false;
+		applySummaryEdits();
+	}, 120);
+}
+
+function handleSummaryInput(event: Event) {
+	const target = event.currentTarget as HTMLElement | null;
+	const ruleId = target?.dataset.ruleId;
+	if (!ruleId) return;
+	const rule = ruleIndex.value.get(ruleId);
+	if (!rule) return;
+	const rawValue = target?.textContent || "";
+	const editType = target?.dataset.edit;
+	if (editType === "scope") {
+		const scopeResult = validateScopeValue(rule, rawValue);
+		if (!scopeResult.valid) {
+			setInvalid(ruleId, scopeResult.message || "Invalid data source.");
+		} else {
+			setInvalid(ruleId, null);
+		}
+		return;
+	}
+	const result = validateRuleValue(rule, rawValue);
+	if (!result.valid) {
+		setInvalid(ruleId, result.message || "Invalid value.");
+	} else {
+		setInvalid(ruleId, null);
+	}
+}
+
+function handleSummaryEnter(event: KeyboardEvent) {
+	event.preventDefault();
+	const target = event.currentTarget as HTMLElement | null;
+	target?.blur();
+	handleSummaryFocusOut();
+}
 const estimatedTotalPages = computed(() => {
 	if (!store.results.value) return 0;
 	const pages = Math.ceil(
@@ -86,28 +711,37 @@ const estimatedTotalPages = computed(() => {
 function applyQueryAndSearch(
 	query: SearchQuery,
 	updateUrl: boolean,
-	group?: QueryBuilderGroup,
+	opts: { baseGroup?: QueryBuilderGroup; requestGroup?: QueryBuilderGroup } = {},
 ) {
+	const baseGroup = opts.baseGroup || smartSearch.queryBuilderGroup.value;
+	const requestGroup = opts.requestGroup || baseGroup;
 	store.setQuery({
 		...query,
 		page: query.page || 1,
-		queryBuilderGroup: group || smartSearch.queryBuilderGroup.value,
+		queryBuilderGroup: requestGroup,
 	});
 	store.search();
+	if (baseGroup) {
+		lastAppliedSignature.value = JSON.stringify(baseGroup);
+	}
 	if (updateUrl) {
 		const includeSearchString =
 			smartSearch.lastEditSource.value === "searchbar" &&
 			!!smartSearch.searchString.value;
 		const params = queryBuilderGroupToParams(
-			group || smartSearch.queryBuilderGroup.value,
+			baseGroup,
 			{
 				pageSize: query.pageSize,
 				cursor: query.cursor,
 				searchString: includeSearchString
 					? smartSearch.searchString.value
 					: undefined,
+				sortBy: query.sortBy,
+				sortDirection: query.sortDirection,
+				page: query.page,
 			},
 		);
+		appendFilterParams(params, filterState.value);
 		syncingRoute.value = true;
 		router
 			.replace({
@@ -118,6 +752,40 @@ function applyQueryAndSearch(
 				syncingRoute.value = false;
 			});
 	}
+}
+
+function applyQueryBuilderEdits() {
+	const group = smartSearch.queryBuilderGroup.value;
+	const signature = JSON.stringify(group);
+	if (signature === lastAppliedSignature.value) return;
+
+	const rangeValidation = validateYearRanges(group);
+	if (!rangeValidation.valid) {
+		showValidationNotice(rangeValidation.message);
+		return;
+	}
+
+	const parsed = queryBuilderGroupToSearchQuery(group);
+	if (!parsed.query) {
+		handleInvalidRoute(parsed.error || "Unable to parse query builder.");
+		return;
+	}
+	routeError.value = null;
+	const mergedQuery = applyFilterState(parsed.query, filterState.value);
+	const nextQuery: SearchQuery = {
+		...mergedQuery,
+		sortBy: store.query.value.sortBy,
+		sortDirection: store.query.value.sortDirection,
+		pageSize: store.query.value.pageSize,
+		page: 1,
+		cursor: undefined,
+	};
+	store.resetPagination();
+	const requestGroup = buildEffectiveGroup(group, filterState.value);
+	applyQueryAndSearch(nextQuery, true, {
+		baseGroup: group,
+		requestGroup,
+	});
 }
 
 function handleInvalidRoute(error: string) {
@@ -134,6 +802,8 @@ function handleClear() {
 	routeError.value = null;
 	store.resetQuery();
 	smartSearch.clearAll();
+	filterState.value = {};
+	lastAppliedSignature.value = "";
 	syncingRoute.value = true;
 	router.replace({ path: "/results" }).finally(() => {
 		syncingRoute.value = false;
@@ -146,9 +816,10 @@ function applyRouteQuery() {
 		if (Array.isArray(value)) params.set(key, value.join(","));
 		else if (value) params.set(key, value);
 	}
-	const shouldNormalize = !params.has("qb");
+	let shouldNormalize = !params.has("qb");
 
 	if ([...params.keys()].length === 0) {
+		filterState.value = {};
 		if (
 			smartSearch.confirmedTokens.value.length > 0 ||
 			smartSearch.freeText.value
@@ -176,15 +847,17 @@ function applyRouteQuery() {
 				);
 				return;
 			}
+			filterState.value = {};
 			const nextQuery: SearchQuery = {
 				...searchResult.query,
 				pageSize: searchResult.query.pageSize,
 				cursor: undefined,
 				page: 1,
+				sortBy: searchResult.query.sortBy,
+				sortDirection: searchResult.query.sortDirection,
 			};
 			routeError.value = null;
 			syncingSmartSearch.value = true;
-			smartSearch.setFromText(searchString);
 			smartSearch.setSearchString(searchString);
 			smartSearch.queryBuilderGroup.value = group;
 			smartSearch.lastEditSource.value = "searchbar";
@@ -192,7 +865,10 @@ function applyRouteQuery() {
 				syncingSmartSearch.value = false;
 			});
 			store.resetPagination();
-			applyQueryAndSearch(nextQuery, true, group);
+			applyQueryAndSearch(nextQuery, true, {
+				baseGroup: group,
+				requestGroup: buildEffectiveGroup(group, filterState.value),
+			});
 			return;
 		}
 		handleInvalidRoute(parsed.error || "Invalid URL parameters.");
@@ -206,22 +882,35 @@ function applyRouteQuery() {
 		return;
 	}
 
+	const filterParsed = paramsToSearchQuery(params);
+	const filterError = filterParsed.error || null;
+	if (filterError) {
+		routeError.value = filterError;
+		filterState.value = {};
+		shouldNormalize = true;
+	} else if (filterParsed.query) {
+		filterState.value = extractFilterState(filterParsed.query);
+	}
+
+	const mergedQuery = applyFilterState(searchResult.query, filterState.value);
 	const nextQuery: SearchQuery = {
-		...searchResult.query,
-		pageSize: parsed.state.pageSize || searchResult.query.pageSize,
+		...mergedQuery,
+		pageSize: parsed.state.pageSize || mergedQuery.pageSize,
 		cursor: parsed.state.cursor,
-		page: 1,
+		page: parsed.state.page || 1,
+		sortBy: parsed.state.sortBy || mergedQuery.sortBy,
+		sortDirection: parsed.state.sortDirection || mergedQuery.sortDirection,
 	};
 
-	routeError.value = null;
+	if (!filterError) {
+		routeError.value = null;
+	}
 	syncingSmartSearch.value = true;
 	if (parsed.state.searchString) {
-		smartSearch.setFromText(parsed.state.searchString);
 		smartSearch.setSearchString(parsed.state.searchString);
 		smartSearch.queryBuilderGroup.value = group;
 		smartSearch.lastEditSource.value = "searchbar";
 	} else {
-		smartSearch.setFromSearchQuery(nextQuery);
 		smartSearch.setSearchString("");
 		smartSearch.onQueryBuilderEdit(group);
 	}
@@ -229,7 +918,12 @@ function applyRouteQuery() {
 		syncingSmartSearch.value = false;
 	});
 	store.resetPagination();
-	applyQueryAndSearch(nextQuery, shouldNormalize, group);
+	const requestGroup = buildEffectiveGroup(group, filterState.value);
+	applyQueryAndSearch(nextQuery, shouldNormalize, {
+		baseGroup: group,
+		requestGroup,
+	});
+	lastAppliedSignature.value = JSON.stringify(group);
 }
 
 onMounted(() => {
@@ -260,27 +954,13 @@ onBeforeUnmount(() => {
 });
 
 watch(
-	() => smartSearch.queryBuilderGroup.value,
-	() => {
+	() => queryBuilderOpen.value,
+	(isOpen, wasOpen) => {
 		if (syncingSmartSearch.value) return;
-		if (smartSearch.lastEditSource.value !== "querybuilder") return;
-
-		const parsed = queryBuilderGroupToSearchQuery(
-			smartSearch.queryBuilderGroup.value,
-		);
-		if (!parsed.query) {
-			handleInvalidRoute(parsed.error || "Unable to parse query builder.");
-			return;
+		if (wasOpen && !isOpen) {
+			applyQueryBuilderEdits();
 		}
-		routeError.value = null;
-		store.resetPagination();
-		applyQueryAndSearch(
-			{ ...parsed.query, page: 1, cursor: undefined },
-			true,
-			smartSearch.queryBuilderGroup.value,
-		);
 	},
-	{ deep: true },
 );
 
 function handleSubmit() {
@@ -292,12 +972,24 @@ function handleSubmit() {
 		return;
 	}
 	routeError.value = null;
+	const mergedQuery = applyFilterState(parsed.query, filterState.value);
+	const nextQuery: SearchQuery = {
+		...mergedQuery,
+		sortBy: store.query.value.sortBy,
+		sortDirection: store.query.value.sortDirection,
+		pageSize: store.query.value.pageSize,
+		page: 1,
+		cursor: undefined,
+	};
 	store.resetPagination();
-	applyQueryAndSearch(
-		{ ...parsed.query, page: 1, cursor: undefined },
-		true,
+	const requestGroup = buildEffectiveGroup(
 		smartSearch.queryBuilderGroup.value,
+		filterState.value,
 	);
+	applyQueryAndSearch(nextQuery, true, {
+		baseGroup: smartSearch.queryBuilderGroup.value,
+		requestGroup,
+	});
 	const includeSearchString =
 		smartSearch.lastEditSource.value === "searchbar" &&
 		!!smartSearch.searchString.value;
@@ -314,7 +1006,6 @@ function handleEditSearch() {
 	const params = queryBuilderGroupToParams(
 		smartSearch.queryBuilderGroup.value,
 		{
-			pageSize: store.query.value.pageSize,
 			searchString: includeSearchString
 				? smartSearch.searchString.value
 				: undefined,
@@ -325,19 +1016,34 @@ function handleEditSearch() {
 
 function handleFilterChange(partial: Partial<SearchQuery>) {
 	store.resetPagination();
-	const next = { ...store.query.value, ...partial, page: 1, cursor: undefined };
-	const group = searchQueryToQueryBuilderGroup(next);
-	smartSearch.onQueryBuilderEdit(group);
-	applyQueryAndSearch(next, true, group);
+	filterState.value = { ...filterState.value, ...partial };
+	const merged = applyFilterState(store.query.value, filterState.value);
+	const next = { ...merged, page: 1, cursor: undefined };
+	const requestGroup = buildEffectiveGroup(
+		smartSearch.queryBuilderGroup.value,
+		filterState.value,
+	);
+	applyQueryAndSearch(next, true, {
+		baseGroup: smartSearch.queryBuilderGroup.value,
+		requestGroup,
+	});
 }
 
 function handlePageChange(page: number) {
 	const cursor = store.cursorHistory.value[page];
-	if (page > 1 && !cursor) return;
-	applyQueryAndSearch(
-		{ ...store.query.value, page, cursor },
-		true,
+	if (!clientFilterActive.value && page > 1 && !cursor) return;
+	const requestGroup = buildEffectiveGroup(
 		smartSearch.queryBuilderGroup.value,
+		filterState.value,
+	);
+	applyQueryAndSearch(
+		{
+			...store.query.value,
+			page,
+			cursor: clientFilterActive.value ? undefined : cursor,
+		},
+		true,
+		{ baseGroup: smartSearch.queryBuilderGroup.value, requestGroup },
 	);
 }
 
@@ -371,67 +1077,113 @@ function handleFindSimilar(citation: Citation) {
 					<div
 						class="flex h-12 w-full items-stretch border-b border-border p-0 m-0"
 					>
-						<div class="flex flex-row h-full justify-between w-full mx-auto">
-							<button
-								class="group flex h-full items-center justify-center gap-2 px-4 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
-								@click="handleEditSearch"
-							>
-								<ArrowLeft
-									class="h-4 w-4 transition-transform group-hover:-translate-x-0.5"
-								/>
-								Edit Search
-							</button>
-							<div class="w-px self-stretch bg-border" />
+						<button
+							class="group flex h-full items-center justify-center gap-2 px-4 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
+							@click="handleEditSearch"
+						>
+							<ArrowLeft
+								class="h-4 w-4 transition-transform group-hover:-translate-x-0.5"
+							/>
+							Edit Search
+						</button>
+						<div class="w-px self-stretch bg-border" />
 
 							<div class="flex-1 min-w-0">
 								<div class="flex h-full items-center px-6 min-w-0">
 									<div
-										v-if="summaryText"
+										v-if="summarySegments.length"
 										ref="marqueeRef"
 										class="query-marquee"
 										:title="summaryText"
+										@focusin="handleSummaryFocusIn"
+										@focusout="handleSummaryFocusOut"
 									>
 										<div
 											:class="[
 												'query-marquee-track',
-												shouldScroll ? 'is-scrolling' : '',
+												shouldScroll && !isEditingSummary ? 'is-scrolling' : '',
 											]"
+											ref="summaryRowRef"
 										>
-											<span class="query-text">{{ summaryText }}</span>
+											<span class="query-text">
+												<template
+													v-for="(segment, idx) in summarySegments"
+													:key="`${segment.type}-${segment.type === 'value' ? segment.ruleId : idx}`"
+												>
+													<span v-if="segment.type === 'text'">{{ segment.text }}</span>
+													<span
+														v-else-if="segment.type === 'scope'"
+														:class="[
+															'query-value query-scope',
+															invalidRuleIds.has(segment.ruleId)
+																? 'query-value-invalid'
+																: '',
+														]"
+														contenteditable="true"
+														spellcheck="false"
+														:data-rule-id="segment.ruleId"
+														data-edit="scope"
+														@input="handleSummaryInput"
+														@keyup="handleSummaryInput"
+														@paste="handleSummaryInput"
+														@keydown.enter="handleSummaryEnter"
+													>
+														{{ segment.text }}
+													</span>
+													<span
+														v-else
+														:class="[
+															'query-value',
+															invalidRuleIds.has(segment.ruleId)
+																? 'query-value-invalid'
+																: '',
+														]"
+														contenteditable="true"
+														spellcheck="false"
+														:data-rule-id="segment.ruleId"
+														data-edit="value"
+														@input="handleSummaryInput"
+														@keyup="handleSummaryInput"
+														@paste="handleSummaryInput"
+														@keydown.enter="handleSummaryEnter"
+													>
+														{{ segment.text }}
+													</span>
+												</template>
+											</span>
 											<span
-												v-if="shouldScroll"
+												v-if="shouldScroll && !isEditingSummary"
 												class="query-text"
 												aria-hidden="true"
 												>{{ summaryText }}</span
 											>
 										</div>
 									</div>
-									<span v-else class="text-xs text-muted-foreground"
-										>No search parameters</span
-									>
-								</div>
+								<span v-else class="text-xs text-muted-foreground"
+									>No search parameters</span
+								>
 							</div>
-
-							<div class="w-px self-stretch bg-border" />
-							<button
-								class="group flex h-full w-40 shrink-0 items-center justify-center gap-2 px-4 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
-								@click="queryBuilderOpen = true"
-							>
-								<Brackets
-									class="h-4 w-4 transition-transform group-hover:scale-105"
-								/>
-								Query Builder
-							</button>
-							<div class="w-px self-stretch bg-border" />
-							<button
-								class="group flex h-full w-12 shrink-0 items-center justify-center px-0 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
-								@click="handleClear"
-								aria-label="Clear search"
-								title="Clear search"
-							>
-								<X class="h-4 w-4 transition-transform group-hover:scale-105" />
-							</button>
 						</div>
+
+						<div class="w-px self-stretch bg-border" />
+						<button
+							class="group flex h-full w-40 shrink-0 items-center justify-center gap-2 px-4 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
+							@click="queryBuilderOpen = true"
+						>
+							<Brackets
+								class="h-4 w-4 transition-transform group-hover:scale-105"
+							/>
+							Query Builder
+						</button>
+						<div class="w-px self-stretch bg-border" />
+						<button
+							class="group flex h-full w-12 shrink-0 items-center justify-center px-0 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
+							@click="handleClear"
+							aria-label="Clear search"
+							title="Clear search"
+						>
+							<X class="h-4 w-4 transition-transform group-hover:scale-105" />
+						</button>
 					</div>
 					<div v-if="routeError" class="px-6 pb-2">
 						<div
@@ -451,7 +1203,7 @@ function handleFindSimilar(citation: Citation) {
 					>
 						<ResultFilters
 							:facets="store.results.value.facets"
-							:query="store.query.value"
+							:query="filterQuery"
 							@change="handleFilterChange"
 							@toggle-collapse="filtersCollapsed = true"
 						/>
@@ -528,6 +1280,10 @@ function handleFindSimilar(citation: Citation) {
 									@change="
 										(sortBy: string, dir: string) => {
 											store.resetPagination();
+											const requestGroup = buildEffectiveGroup(
+												smartSearch.queryBuilderGroup.value,
+												filterState,
+											);
 											applyQueryAndSearch(
 												{
 													...store.query.value,
@@ -541,6 +1297,10 @@ function handleFindSimilar(citation: Citation) {
 													cursor: undefined,
 												},
 												true,
+												{
+													baseGroup: smartSearch.queryBuilderGroup.value,
+													requestGroup,
+												},
 											);
 										}
 									"
@@ -606,9 +1366,12 @@ function handleFindSimilar(citation: Citation) {
 						<QueryBuilder
 							v-model:open="queryBuilderOpen"
 							:show-toggle="false"
+							:show-apply="true"
+							apply-label="Apply"
 							transition="fade"
 							panel-class=""
 							@reset="handleClear"
+							@apply="() => { applyQueryBuilderEdits(); queryBuilderOpen = false; }"
 						/>
 					</div>
 				</div>
@@ -652,6 +1415,25 @@ function handleFindSimilar(citation: Citation) {
 	font-family:
 		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 		"Courier New", monospace;
+}
+.query-value {
+	color: hsl(var(--primary));
+	font-weight: 600;
+	outline: none;
+}
+.query-scope {
+	text-transform: none;
+}
+.query-value:focus {
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 2px;
+}
+.query-value-invalid {
+	color: hsl(var(--destructive));
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 2px;
 }
 @keyframes query-marquee {
 	0% {

@@ -418,6 +418,9 @@ export function useSmartSearch() {
         searchString: computed(() => searchString.value),
         suggestions: computed(() => suggestions.value),
         allSuggestions: computed(() => allSuggestions.value),
+        highlightSuggestions: computed(() =>
+            allSuggestions.value.filter((s) => !rejectedSuggestionKeys.has(suggestionKey(s)))
+        ),
         queryBuilderGroup,
         lastEditSource,
         onSegmentsChange,
