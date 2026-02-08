@@ -577,7 +577,7 @@ function updateExampleSearch(example: ExampleItem, value: string) {
             <header id="overview" class="space-y-6">
               <div class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr] items-start">
                 <div class="space-y-4">
-                  <div class="inline-flex items-center gap-2 rounded-full border border-border/50 bg-card/60 px-3 py-1 text-[11px] text-muted-foreground/80">
+                  <div class="inline-flex items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-1 text-[11px] text-muted-foreground/80">
                     <Sparkles class="h-3.5 w-3.5 text-primary/70" />
                     Example library
                   </div>
@@ -618,10 +618,10 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                   <div class="mt-4 rounded-xl border border-border/40 bg-background/80 p-3 text-xs text-muted-foreground">
                     <div class="font-semibold text-foreground/80 mb-1">Library stats</div>
                     <div class="flex flex-wrap gap-2">
-                      <span class="rounded-full border border-border/50 px-2 py-1">Total {{ scopeCounts.total }}</span>
-                      <span class="rounded-full border border-border/50 px-2 py-1">ECHR {{ scopeCounts.echr }}</span>
-                      <span class="rounded-full border border-border/50 px-2 py-1">Rechtspraak {{ scopeCounts.rs }}</span>
-                      <span class="rounded-full border border-border/50 px-2 py-1">Mixed {{ scopeCounts.mixed }}</span>
+                      <span class="rounded-lg border border-border/50 px-2 py-1">Total {{ scopeCounts.total }}</span>
+                      <span class="rounded-lg border border-border/50 px-2 py-1">ECHR {{ scopeCounts.echr }}</span>
+                      <span class="rounded-lg border border-border/50 px-2 py-1">Rechtspraak {{ scopeCounts.rs }}</span>
+                      <span class="rounded-lg border border-border/50 px-2 py-1">Mixed {{ scopeCounts.mixed }}</span>
                     </div>
                   </div>
                 </div>
@@ -630,27 +630,27 @@ function updateExampleSearch(example: ExampleItem, value: string) {
               <div class="grid gap-4 xl:grid-cols-[1fr_auto] items-center">
                 <div class="flex flex-wrap items-center gap-2">
                   <button
-                    class="rounded-full border px-3 py-1 text-xs transition-colors"
+                    class="rounded-lg border px-3 py-1 text-xs transition-colors"
                     :class="filterScope === 'ALL' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/50 text-muted-foreground hover:text-foreground'"
                     @click="filterScope = 'ALL'"
                   >All</button>
                   <button
-                    class="rounded-full border px-3 py-1 text-xs transition-colors"
+                    class="rounded-lg border px-3 py-1 text-xs transition-colors"
                     :class="filterScope === 'ECHR' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/50 text-muted-foreground hover:text-foreground'"
                     @click="filterScope = 'ECHR'"
                   >ECHR</button>
                   <button
-                    class="rounded-full border px-3 py-1 text-xs transition-colors"
+                    class="rounded-lg border px-3 py-1 text-xs transition-colors"
                     :class="filterScope === 'RS' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/50 text-muted-foreground hover:text-foreground'"
                     @click="filterScope = 'RS'"
                   >Rechtspraak</button>
                   <button
-                    class="rounded-full border px-3 py-1 text-xs transition-colors"
+                    class="rounded-lg border px-3 py-1 text-xs transition-colors"
                     :class="filterScope === 'MIXED' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/50 text-muted-foreground hover:text-foreground'"
                     @click="filterScope = 'MIXED'"
                   >Mixed</button>
                 </div>
-                <div class="flex items-center gap-2 rounded-full border border-border/50 bg-card/60 px-3 py-1.5">
+                <div class="flex items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-1.5">
                   <span class="text-[10px] uppercase tracking-wider text-muted-foreground/60">Filter</span>
                   <input
                     v-model="filterText"
@@ -681,7 +681,7 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                         <h3 class="text-sm font-semibold text-foreground">{{ example.title }}</h3>
                         <p class="text-xs text-muted-foreground">{{ example.description }}</p>
                       </div>
-                      <span class="rounded-full border border-border/50 px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                      <span class="rounded-lg border border-border/50 px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
                         {{ example.scope }}
                       </span>
                     </div>
@@ -701,25 +701,25 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                         <span
                           v-for="tag in example.tags"
                           :key="tag"
-                          class="rounded-full border border-border/40 px-2 py-0.5 text-[10px] text-muted-foreground"
+                          class="rounded-lg border border-border/40 px-2 py-0.5 text-[10px] text-muted-foreground"
                         >{{ tag }}</span>
                       </div>
                       <div class="flex flex-wrap items-center gap-2">
-                        <Button variant="ghost" size="sm" class="h-8 rounded-full" @click="toggleExpanded(example.id)">
+                        <Button variant="ghost" size="sm" class="h-8 rounded-lg" @click="toggleExpanded(example.id)">
                           {{ expandedTextId === example.id ? 'Hide builder' : 'View builder' }}
                         </Button>
-                        <Button variant="default" size="sm" class="h-8 gap-2 rounded-full px-4" @click="testQuery(example)">
+                        <Button variant="default" size="sm" class="h-8 gap-2 rounded-lg px-4" @click="testQuery(example)">
                           <Play class="h-3 w-3" />
                           Test query
                         </Button>
-                        <Button variant="outline" size="sm" class="h-8 gap-2 rounded-full px-4" @click="openInNewTab(example)">
+                        <Button variant="outline" size="sm" class="h-8 gap-2 rounded-lg px-4" @click="openInNewTab(example)">
                           <ExternalLink class="h-3 w-3" />
                           Open in new tab
                         </Button>
                         <Button
                           variant="outline"
                           size="icon"
-                          class="h-7 w-7 rounded-full"
+                          class="h-7 w-7 rounded-lg"
                           aria-label="Copy search text"
                           @click="copySearch(example)"
                         >
@@ -728,7 +728,7 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                         <Button
                           variant="outline"
                           size="icon"
-                          class="h-7 w-7 rounded-full"
+                          class="h-7 w-7 rounded-lg"
                           aria-label="Copy URL"
                           @click="copyUrl(example)"
                         >
@@ -776,7 +776,7 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                       <h3 class="text-sm font-semibold text-foreground">{{ example.title }}</h3>
                       <p class="text-xs text-muted-foreground">{{ example.description }}</p>
                     </div>
-                    <span class="rounded-full border border-border/50 px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <span class="rounded-lg border border-border/50 px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
                       {{ example.scope }}
                     </span>
                   </div>
@@ -785,7 +785,7 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                     <span
                       v-for="tag in example.tags"
                       :key="tag"
-                      class="rounded-full border border-border/40 px-2 py-0.5 text-[10px] text-muted-foreground"
+                      class="rounded-lg border border-border/40 px-2 py-0.5 text-[10px] text-muted-foreground"
                     >{{ tag }}</span>
                   </div>
 
@@ -807,18 +807,18 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                   />
 
                   <div class="mt-4 flex flex-wrap gap-2">
-                    <Button variant="default" size="sm" class="h-8 gap-2 rounded-full px-4" @click="testQuery(example)">
+                    <Button variant="default" size="sm" class="h-8 gap-2 rounded-lg px-4" @click="testQuery(example)">
                       <Play class="h-3.5 w-3.5" />
                       Test query
                     </Button>
-                    <Button variant="outline" size="sm" class="h-8 gap-2 rounded-full px-4" @click="openInNewTab(example)">
+                    <Button variant="outline" size="sm" class="h-8 gap-2 rounded-lg px-4" @click="openInNewTab(example)">
                       <ExternalLink class="h-3.5 w-3.5" />
                       Open in new tab
                     </Button>
                     <Button
                       variant="outline"
                       size="icon"
-                      class="rounded-full"
+                      class="rounded-lg"
                       aria-label="Copy URL"
                       @click="copyUrl(example)"
                     >

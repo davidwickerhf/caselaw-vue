@@ -41,7 +41,7 @@ async function copyJson() {
         Query body JSON
       </div>
       <button
-        class="h-6 w-6 rounded-full border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 transition-all flex items-center justify-center"
+        class="h-6 w-6 rounded-lg border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 transition-all flex items-center justify-center"
         aria-label="Copy query JSON"
         @click="copyJson"
       >

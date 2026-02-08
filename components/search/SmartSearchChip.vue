@@ -60,7 +60,7 @@ const icon = computed(() => {
 <template>
   <span
     :class="[
-      'group/chip inline-flex items-center gap-1 rounded-full font-medium leading-none transition-all select-none',
+      'group/chip inline-flex items-center gap-1 rounded-lg font-medium leading-none transition-all select-none',
       'hover:shadow-sm',
       sizeClasses,
       colorClasses,

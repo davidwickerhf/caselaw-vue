@@ -112,7 +112,7 @@ const builderNotGroup = makeGroup('AND', [
             <header id="overview" class="space-y-6">
               <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
                 <div class="space-y-4">
-                  <div class="inline-flex items-center gap-2 rounded-full border border-border/50 bg-card/60 px-3 py-1 text-[11px] text-muted-foreground/80">
+                  <div class="inline-flex items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-1 text-[11px] text-muted-foreground/80">
                     <BookOpen class="h-3.5 w-3.5 text-primary/70" />
                     Docs
                   </div>

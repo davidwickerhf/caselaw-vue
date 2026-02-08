@@ -44,7 +44,7 @@ function toggle(state: string) {
     <div v-if="selected.length > 0" class="flex flex-wrap gap-1">
       <Badge v-for="state in selected" :key="state" variant="secondary" class="gap-1 pr-1">
         {{ state }}
-        <button class="ml-0.5 rounded-full hover:bg-muted-foreground/20" @click="toggle(state)">
+        <button class="ml-0.5 rounded-md hover:bg-muted-foreground/20" @click="toggle(state)">
           <X class="h-3 w-3" />
         </button>
       </Badge>

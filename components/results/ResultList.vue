@@ -156,14 +156,14 @@ const pageLabel = computed(() => {
     >
       <div
         :class="[
-          'inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/30 p-1 shadow-sm backdrop-blur-md',
+          'inline-flex items-center gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-sm backdrop-blur-md',
           disabled ? 'opacity-40 pointer-events-none' : ''
         ]"
       >
         <Button
           variant="ghost"
           size="icon"
-          class="h-7 w-7 rounded-full"
+          class="h-7 w-7 rounded-md"
           :disabled="disabled || page <= 1"
           @click="disabled ? undefined : emit('page', page - 1)"
         >
@@ -177,7 +177,7 @@ const pageLabel = computed(() => {
               v-else
               :variant="page === p ? 'default' : 'ghost'"
               size="sm"
-              class="h-7 w-7 rounded-full p-0 text-[11px]"
+              class="h-7 w-7 rounded-md p-0 text-[11px]"
               :disabled="disabled"
               @click="disabled ? undefined : emit('page', p as number)"
             >
@@ -190,7 +190,7 @@ const pageLabel = computed(() => {
         <Button
           variant="ghost"
           size="icon"
-          class="h-7 w-7 rounded-full"
+          class="h-7 w-7 rounded-md"
           :disabled="disabled || (totalPages ? page >= totalPages : !hasNext)"
           @click="disabled ? undefined : emit('page', page + 1)"
         >

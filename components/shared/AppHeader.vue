@@ -6,6 +6,8 @@ const props = defineProps<{
 	fixed?: boolean;
 }>();
 
+const config = useRuntimeConfig();
+const apiBaseUrl = computed(() => config.public.apiBaseUrl as string);
 const colorMode = useColorMode();
 const isDark = computed(() => colorMode.value === "dark");
 const headerClasses = computed(() => [
@@ -20,42 +22,53 @@ function toggleMode() {
 
 <template>
 	<header :class="headerClasses">
-		<div class="mx-auto flex h-12 items-center justify-between px-0">
-			<div class="flex flex-row h-full justify-between w-full">
+		<div class="mx-auto grid h-12 grid-cols-[auto_1fr_auto] items-center px-0">
+			<!-- Left: Logo -->
+			<NuxtLink
+				to="/"
+				class="flex items-center gap-2 font-semibold tracking-tight text-foreground ml-4"
+			>
+				<Scale class="h-4 w-4 text-primary" />
+				<span class="text-sm">LegalSearch</span>
+			</NuxtLink>
+
+			<!-- Center: Nav links -->
+			<nav
+				class="flex items-center justify-center gap-7 text-sm text-muted-foreground"
+			>
 				<NuxtLink
 					to="/"
-					class="flex items-center gap-2 font-semibold tracking-tight text-foreground ml-4"
+					class="hover:text-foreground transition-colors"
 				>
-					<Scale class="h-4 w-4 text-primary" />
-					<span class="text-sm">LegalSearch</span>
+					Search
 				</NuxtLink>
+				<NuxtLink
+					to="/examples"
+					class="hover:text-foreground transition-colors"
+				>
+					Examples
+				</NuxtLink>
+				<NuxtLink
+					to="/docs"
+					class="hover:text-foreground transition-colors"
+				>
+					Docs
+				</NuxtLink>
+				<NuxtLink
+					to="/about"
+					class="hover:text-foreground transition-colors"
+				>
+					About
+				</NuxtLink>
+				<a
+					:href="apiBaseUrl"
+					class="hover:text-foreground transition-colors"
+				>
+					Citations API
+				</a>
+			</nav>
 
-				<div class="flex items-center">
-					<nav
-						class="flex items-center gap-7 pr-4 text-sm text-muted-foreground"
-					>
-						<NuxtLink
-							to="/examples"
-							class="hover:text-foreground transition-colors"
-						>
-							Examples
-						</NuxtLink>
-						<NuxtLink
-							to="/docs"
-							class="hover:text-foreground transition-colors"
-						>
-							Docs
-						</NuxtLink>
-						<NuxtLink
-							to="/about"
-							class="hover:text-foreground transition-colors"
-						>
-							About
-						</NuxtLink>
-					</nav>
-				</div>
-			</div>
-
+			<!-- Right: Actions -->
 			<div class="flex flex-row h-full">
 				<div class="w-px h-full bg-border" />
 				<NuxtLink

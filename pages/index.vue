@@ -213,8 +213,8 @@ onMounted(() => {
 					mask-image: radial-gradient(
 						circle at center,
 						transparent 0%,
-						transparent 45%,
-						black 65%,
+						transparent 20%,
+						black 40%,
 						black 100%
 					);
 					mask-position: center;
@@ -222,8 +222,8 @@ onMounted(() => {
 					-webkit-mask-image: radial-gradient(
 						circle at center,
 						transparent 0%,
-						transparent 45%,
-						black 65%,
+						transparent 20%,
+						black 40%,
 						black 100%
 					);
 					-webkit-mask-position: center;
@@ -241,8 +241,8 @@ onMounted(() => {
 					mask-image: radial-gradient(
 						circle at center,
 						transparent 0%,
-						transparent 45%,
-						black 65%,
+						transparent 20%,
+						black 40%,
 						black 100%
 					);
 					mask-position: center;
@@ -250,8 +250,8 @@ onMounted(() => {
 					-webkit-mask-image: radial-gradient(
 						circle at center,
 						transparent 0%,
-						transparent 45%,
-						black 65%,
+						transparent 20%,
+						black 40%,
 						black 100%
 					);
 					-webkit-mask-position: center;
@@ -261,6 +261,13 @@ onMounted(() => {
 		</div>
 		<div class="relative z-20 pointer-events-auto">
 			<AppHeader fixed />
+		</div>
+		<div class="fixed top-14 left-5 z-30">
+			<span
+				class="inline-flex items-center rounded-lg bg-muted px-3 py-1 text-xs font-medium text-muted-foreground ring-1 ring-inset ring-border"
+			>
+				Preview
+			</span>
 		</div>
 
 		<!-- Scrollable middle -->

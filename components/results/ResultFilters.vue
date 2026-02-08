@@ -135,7 +135,7 @@ function isActive(section: FacetSection, itemValue: string): boolean {
     <div v-if="activeFilters.length > 0" class="flex flex-wrap gap-1 mb-3 pb-3 border-b border-border px-4">
       <Badge v-for="(chip, i) in activeFilters" :key="i" variant="secondary" class="gap-1 pr-1 text-[10px]">
         {{ chip.label }}
-        <button class="ml-0.5 rounded-full hover:bg-muted-foreground/20" @click="chip.onremove()">
+        <button class="ml-0.5 rounded-md hover:bg-muted-foreground/20" @click="chip.onremove()">
           <X class="h-2.5 w-2.5" />
         </button>
       </Badge>

@@ -5,6 +5,13 @@ export default defineNuxtConfig({
   devServer: { port: 3001 },
   modules: ['@vueuse/nuxt'],
   css: ['~/assets/css/main.css'],
+  runtimeConfig: {
+    public: {
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || (process.env.NODE_ENV === 'production'
+        ? 'https://api.caselawexplorer.tech'
+        : 'http://localhost:3000'),
+    },
+  },
   vite: {
     plugins: [
       // @ts-expect-error - tailwindcss vite plugin

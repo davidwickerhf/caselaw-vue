@@ -134,7 +134,7 @@ function createTokenNode(token: ParsedToken): HTMLElement {
   const remove = document.createElement('button')
   remove.type = 'button'
   remove.dataset.removeToken = token.id
-  remove.className = 'smart-search-chip-remove ml-1 rounded-full px-1 opacity-60 hover:opacity-100'
+  remove.className = 'smart-search-chip-remove ml-1 rounded-md px-1 opacity-60 hover:opacity-100'
   remove.textContent = 'x'
 
   wrapper.append(label, remove)
@@ -573,7 +573,7 @@ watch(
       <div class="flex items-center gap-1.5 shrink-0">
         <button
           v-if="hasContent"
-          class="flex items-center justify-center h-7 w-7 rounded-full text-muted-foreground/40 hover:text-foreground hover:bg-muted/60 transition-all"
+          class="flex items-center justify-center h-7 w-7 rounded-lg text-muted-foreground/40 hover:text-foreground hover:bg-muted/60 transition-all"
           @click.stop="clear"
         >
           <X class="h-3.5 w-3.5" />

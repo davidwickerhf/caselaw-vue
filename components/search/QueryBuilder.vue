@@ -129,7 +129,7 @@ async function copyPreview() {
     <button
       v-if="props.showToggle"
       :class="[
-        'inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium transition-all',
+        'inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-medium transition-all',
         isOpen
           ? 'bg-primary/10 text-primary border border-primary/20'
           : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50 border border-transparent'
@@ -138,7 +138,7 @@ async function copyPreview() {
     >
       <Brackets class="h-3.5 w-3.5" />
       Query Builder
-      <span v-if="ruleCount > 0" class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+      <span v-if="ruleCount > 0" class="inline-flex h-4 min-w-4 items-center justify-center rounded-md bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
         {{ ruleCount }}
       </span>
     </button>
@@ -226,7 +226,7 @@ async function copyPreview() {
               <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Preview</span>
             </div>
             <button
-              class="h-6 w-6 rounded-full border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 transition-all flex items-center justify-center"
+              class="h-6 w-6 rounded-lg border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 transition-all flex items-center justify-center"
               aria-label="Copy preview"
               @click="copyPreview"
             >

@@ -35,12 +35,12 @@ function handleSort(value: string) {
   <div class="flex items-center justify-between gap-4">
     <div class="flex items-center gap-3">
       <span class="text-[10px] uppercase tracking-wider text-muted-foreground/70">Sort by</span>
-    <div class="inline-flex items-center rounded-full border border-border/60 bg-muted/30 p-1 shadow-sm">
+    <div class="inline-flex items-center rounded-lg border border-border/60 bg-muted/30 p-1 shadow-sm">
       <button
         v-for="option in sortOptions"
         :key="option.value"
         :class="[
-          'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold transition-all',
+          'inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-semibold transition-all',
           sortBy === option.value
             ? 'bg-foreground text-background shadow-sm'
             : 'text-muted-foreground hover:text-foreground hover:bg-background/40',
@@ -58,10 +58,10 @@ function handleSort(value: string) {
     </div>
     </div>
 
-    <div class="inline-flex items-center rounded-full border border-border/60 bg-muted/30 p-1 shadow-sm">
+    <div class="inline-flex items-center rounded-lg border border-border/60 bg-muted/30 p-1 shadow-sm">
       <button
         :class="[
-          'inline-flex h-7 w-7 items-center justify-center rounded-full transition-all',
+          'inline-flex h-7 w-7 items-center justify-center rounded-md transition-all',
           viewMode === 'expanded'
             ? 'bg-foreground text-background shadow-sm'
             : 'text-muted-foreground hover:text-foreground hover:bg-background/40'
@@ -73,7 +73,7 @@ function handleSort(value: string) {
       </button>
       <button
         :class="[
-          'inline-flex h-7 w-7 items-center justify-center rounded-full transition-all',
+          'inline-flex h-7 w-7 items-center justify-center rounded-md transition-all',
           viewMode === 'compact'
             ? 'bg-foreground text-background shadow-sm'
             : 'text-muted-foreground hover:text-foreground hover:bg-background/40'

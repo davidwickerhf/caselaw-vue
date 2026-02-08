@@ -9,7 +9,7 @@
 					href="https://hudoc.echr.coe.int/"
 					rel="noopener noreferrer"
 					target="_blank"
-					>ECHR</a
+					>HUDOC</a
 				>
 				&middot;
 				<a
@@ -20,14 +20,20 @@
 					>Rechtspraak</a
 				>
 				&middot;
-				<span>Case Law Search Engine</span>
-				&middot;
 				<a
 					class="hover:text-foreground/80"
 					href="https://www.biss-institute.com/"
 					rel="noopener noreferrer"
 					target="_blank"
 					>BISS Institute</a
+				>
+				&middot;
+				<a
+					class="hover:text-foreground/80"
+					href="https://www.maastrichtuniversity.nl/research/law-and-tech-lab"
+					rel="noopener noreferrer"
+					target="_blank"
+					>Maastricht University Law & Tech Lab</a
 				>
 			</p>
 		</div>
