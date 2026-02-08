@@ -7,6 +7,7 @@ import { recognizeMetadata } from '../../lib/parser/recognizers/metadata-recogni
 import { recognizeDates } from '../../lib/parser/recognizers/date-recognizer';
 import { recognizeEcli } from '../../lib/parser/recognizers/ecli-recognizer';
 import { recognizeApplicationNumbers } from '../../lib/parser/recognizers/application-recognizer';
+import { recognizeDegrees } from '../../lib/parser/recognizers/degree-recognizer';
 
 describe('recognizers', () => {
   it('extracts quoted keywords with cleaned casing', () => {
@@ -72,8 +73,8 @@ describe('recognizers', () => {
   it('detects a variety of dates', () => {
     const range = recognizeDates('from 12 March 2014 to 5 May 2016');
     const types = range.suggestions.flatMap((s) => (s.tokens ? s.tokens.map((t) => t.type) : [s.token.type]));
-    expect(types).toContain('date_start');
-    expect(types).toContain('date_end');
+    expect(types).toContain('date_start_exact');
+    expect(types).toContain('date_end_exact');
 
     const between = recognizeDates('tussen 2014 en 2016');
     const betweenTypes = between.suggestions.flatMap((s) => (s.tokens ? s.tokens.map((t) => t.type) : [s.token.type]));
@@ -84,10 +85,10 @@ describe('recognizers', () => {
     expect(year.suggestions.some((s) => s.token.type === 'year' && s.token.value === '2020')).toBe(true);
 
     const month = recognizeDates('12 March 2018');
-    expect(month.suggestions.some((s) => s.token.value === '2018')).toBe(true);
+    expect(month.suggestions.some((s) => s.token.value === '2018-03-12')).toBe(true);
 
     const monthNl = recognizeDates('12 maart 2018');
-    expect(monthNl.suggestions.some((s) => s.token.value === '2018')).toBe(true);
+    expect(monthNl.suggestions.some((s) => s.token.value === '2018-03-12')).toBe(true);
   });
 
   it('detects ECLI references', () => {
@@ -104,5 +105,23 @@ describe('recognizers', () => {
     const nl = recognizeApplicationNumbers('applicatienummer 76543/21');
     expect(nl.suggestions[0].token.type).toBe('application_number');
     expect(nl.suggestions[0].token.value).toBe('76543/21');
+  });
+
+  it('detects graph degrees and subgraph mode', () => {
+    const result = recognizeDegrees('degree source 2 and degree target 3 subgraph');
+    const types = result.suggestions.map((s) => s.token.type);
+    expect(types).toContain('degree_source');
+    expect(types).toContain('degree_target');
+    expect(types).toContain('subgraph');
+
+    const depth = recognizeDegrees('depth 2');
+    expect(depth.suggestions[0].token.type).toBe('degree_depth');
+    expect(depth.suggestions[0].token.value).toBe('2');
+
+    const breadth = recognizeDegrees('breadth 3');
+    expect(breadth.suggestions[0].token.type).toBe('degree_source');
+
+    const target = recognizeDegrees('target degree 4');
+    expect(target.suggestions[0].token.type).toBe('degree_target');
   });
 });

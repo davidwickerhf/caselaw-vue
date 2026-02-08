@@ -1,4 +1,4 @@
-import type { Citation, SearchQuery, SearchResult, SearchFacets, FacetItem, QueryBuilderGroup, QueryBuilderRule } from '~/lib/types';
+import type { Citation, SearchQuery, SearchResult, SearchFacets, FacetItem, QueryBuilderGroup, QueryBuilderRule, ApiEdge, ApiEdgesPagination } from '~/lib/types';
 import { fetchCombinedPage, DEFAULT_PAGE_SIZE } from '~/lib/api/client';
 import { searchQueryToQueryBuilderGroup } from '~/lib/utils/search-query';
 
@@ -57,7 +57,8 @@ function addFacetCounts(counts: FacetCounts, cases: Citation[]) {
 	}
 }
 
-const CLIENT_ONLY_FIELDS = new Set(['article_violated', 'article_applied', 'article_non_violated']);
+// Combined endpoint now supports article filters server-side, so keep client-only list empty.
+const CLIENT_ONLY_FIELDS = new Set<string>();
 
 function splitClientFilters(group: QueryBuilderGroup): { serverGroup: QueryBuilderGroup; clientRules: QueryBuilderRule[] } {
 	const clientRules: QueryBuilderRule[] = [];
@@ -201,7 +202,15 @@ export function computeFacets(cases: Citation[]): SearchFacets {
 function buildSearchResult(
 	citations: Citation[],
 	query: SearchQuery,
-	opts: { nextCursor?: string; total?: number; totalIsExact?: boolean; loadingMore?: boolean; facets?: SearchFacets }
+	opts: {
+		nextCursor?: string;
+		total?: number;
+		totalIsExact?: boolean;
+		loadingMore?: boolean;
+		facets?: SearchFacets;
+		edges?: ApiEdge[];
+		edgesPagination?: ApiEdgesPagination;
+	}
 ): SearchResult {
 	const facets = opts.facets ?? computeFacets(citations);
 	const total = opts.total ?? (query.page - 1) * query.pageSize + citations.length;
@@ -216,6 +225,9 @@ function buildSearchResult(
 		facets,
 		nextCursor: opts.nextCursor,
 		loadingMore: opts.loadingMore
+		,
+		edges: opts.edges,
+		edgesPagination: opts.edgesPagination
 	};
 }
 
@@ -239,8 +251,19 @@ export async function executeSearch(
 	query: SearchQuery,
 	onUpdate: (result: SearchResult) => void,
 	seed?: { facets: SearchFacets; total: number; totalIsExact: boolean },
-	onAccumulated?: (payload: { all: Citation[]; complete: boolean }) => void
+	onAccumulated?: (payload: { all: Citation[]; complete: boolean }) => void,
+	opts: { controller?: AbortController } = {}
 ): Promise<() => void> {
+	const controller = opts.controller;
+	const signal = controller?.signal;
+	const makeAbortError = () => {
+		const err = new Error('Aborted');
+		(err as Error & { name: string }).name = 'AbortError';
+		return err;
+	};
+	const ensureNotAborted = () => {
+		if (signal?.aborted) throw makeAbortError();
+	};
 	const pageSize = query.pageSize || DEFAULT_PAGE_SIZE;
 	const group = query.queryBuilderGroup || searchQueryToQueryBuilderGroup(query);
 	const { serverGroup, clientRules } = splitClientFilters(group);
@@ -253,137 +276,184 @@ export async function executeSearch(
 		}
 		: serverGroup;
 	let cancelled = false;
+	const handleAbort = () => {
+		cancelled = true;
+	};
+	if (signal) signal.addEventListener('abort', handleAbort);
+	const cleanup = () => {
+		if (signal) signal.removeEventListener('abort', handleAbort);
+	};
 	if (!hasRules(group)) {
 		onUpdate(buildSearchResult([], query, { total: 0, totalIsExact: true, facets: computeFacets([]) }));
+		cleanup();
 		return () => {};
 	}
 
 	const initialCursor = clientFiltering ? undefined : query.cursor;
-	const result = await fetchCombinedPage(query, effectiveGroup, pageSize, initialCursor);
-	if (cancelled) return () => {};
+	try {
+		ensureNotAborted();
+		const result = await fetchCombinedPage(query, effectiveGroup, pageSize, initialCursor, signal);
+		if (cancelled) {
+			cleanup();
+			return () => {};
+		}
+		const pageEdges = result.edges;
+		const pageEdgesPagination = result.edgesPagination;
 
-	if (!clientFiltering && query.page > 1 && seed) {
+		if (!clientFiltering && query.page > 1 && seed) {
+			onUpdate(
+				buildSearchResult(result.citations, query, {
+					nextCursor: result.nextCursor,
+					total: seed.total,
+					totalIsExact: seed.totalIsExact,
+					facets: seed.facets,
+					edges: pageEdges,
+					edgesPagination: pageEdgesPagination
+				})
+			);
+			cleanup();
+			return () => {
+				cancelled = true;
+				controller?.abort();
+				cleanup();
+			};
+		}
+
+		if (clientFiltering) {
+			const seen = new Set<string>();
+			const accumulated: Citation[] = [];
+
+			const addPage = (page: Citation[]) => {
+				for (const item of page) {
+					if (seen.has(item.id)) continue;
+					seen.add(item.id);
+					accumulated.push(item);
+				}
+			};
+
+			const updateFilteredResult = (nextCursor?: string) => {
+				const filtered = applyClientFilters(accumulated, clientRules);
+				const start = (query.page - 1) * pageSize;
+				const pageSlice = filtered.slice(start, start + pageSize);
+				const total = filtered.length;
+				const totalIsExact = !nextCursor;
+				const hasMore = total > query.page * pageSize || !!nextCursor;
+				onUpdate(
+					buildSearchResult(pageSlice, query, {
+						nextCursor: hasMore ? 'client-more' : undefined,
+						total,
+						totalIsExact,
+						loadingMore: !!nextCursor,
+						facets: computeFacets(filtered),
+						edges: pageEdges,
+						edgesPagination: pageEdgesPagination
+					})
+				);
+				onAccumulated?.({ all: filtered, complete: !nextCursor });
+			};
+
+			addPage(result.citations);
+			updateFilteredResult(result.nextCursor);
+
+			let cursor = result.nextCursor;
+			while (cursor && !cancelled) {
+				ensureNotAborted();
+				const pageResult = await fetchCombinedPage(query, effectiveGroup, pageSize, cursor, signal);
+				addPage(pageResult.citations);
+				cursor = pageResult.nextCursor;
+				updateFilteredResult(cursor);
+			}
+
+			if (!cancelled) {
+				updateFilteredResult(undefined);
+			}
+
+			cleanup();
+			return () => {
+				cancelled = true;
+				controller?.abort();
+				cleanup();
+			};
+		}
+
+		const facetCounts = createFacetCounts();
+		addFacetCounts(facetCounts, result.citations);
+		const allCitations: Citation[] = [...result.citations];
+
+		const hasMore = !!result.nextCursor;
+		const baseTotal = (query.page - 1) * pageSize + result.citations.length;
+		const exactFromBackend = result.totalIsExact === true;
+		const total = exactFromBackend ? (result.total ?? baseTotal) : baseTotal;
+		const totalIsExact = exactFromBackend || (!hasMore && result.total === undefined);
+
 		onUpdate(
 			buildSearchResult(result.citations, query, {
 				nextCursor: result.nextCursor,
-				total: seed.total,
-				totalIsExact: seed.totalIsExact,
-				facets: seed.facets
+				total,
+				totalIsExact,
+				loadingMore: hasMore,
+				facets: countsToFacets(facetCounts),
+				edges: pageEdges,
+				edgesPagination: pageEdgesPagination
 			})
 		);
-		return () => {
-			cancelled = true;
-		};
-	}
-
-	if (clientFiltering) {
-		const seen = new Set<string>();
-		const accumulated: Citation[] = [];
-
-		const addPage = (page: Citation[]) => {
-			for (const item of page) {
-				if (seen.has(item.id)) continue;
-				seen.add(item.id);
-				accumulated.push(item);
-			}
-		};
-
-		const updateFilteredResult = (nextCursor?: string) => {
-			const filtered = applyClientFilters(accumulated, clientRules);
-			const start = (query.page - 1) * pageSize;
-			const pageSlice = filtered.slice(start, start + pageSize);
-			const total = filtered.length;
-			const totalIsExact = !nextCursor;
-			const hasMore = total > query.page * pageSize || !!nextCursor;
-			onUpdate(
-				buildSearchResult(pageSlice, query, {
-					nextCursor: hasMore ? 'client-more' : undefined,
-					total,
-					totalIsExact,
-					loadingMore: !!nextCursor,
-					facets: computeFacets(filtered)
-				})
-			);
-			onAccumulated?.({ all: filtered, complete: !nextCursor });
-		};
-
-		addPage(result.citations);
-		updateFilteredResult(result.nextCursor);
-
-		let cursor = result.nextCursor;
-		while (cursor && !cancelled) {
-			const pageResult = await fetchCombinedPage(query, effectiveGroup, pageSize, cursor);
-			addPage(pageResult.citations);
-			cursor = pageResult.nextCursor;
-			updateFilteredResult(cursor);
-		}
-
-		if (!cancelled) {
-			updateFilteredResult(undefined);
-		}
-
-		return () => {
-			cancelled = true;
-		};
-	}
-
-	const facetCounts = createFacetCounts();
-	addFacetCounts(facetCounts, result.citations);
-	const allCitations: Citation[] = [...result.citations];
-
-	const hasMore = !!result.nextCursor;
-	const baseTotal = (query.page - 1) * pageSize + result.citations.length;
-	const exactFromBackend = result.totalIsExact === true;
-	const total = exactFromBackend ? (result.total ?? baseTotal) : baseTotal;
-	const totalIsExact = exactFromBackend || (!hasMore && result.total === undefined);
-
-	onUpdate(
-		buildSearchResult(result.citations, query, {
-			nextCursor: result.nextCursor,
-			total,
-			totalIsExact,
-			loadingMore: hasMore,
-			facets: countsToFacets(facetCounts)
-		})
-	);
-	if (!hasMore) {
-		onAccumulated?.({ all: allCitations, complete: true });
-	}
-
-	if (query.page === 1 && !query.cursor && hasMore) {
-		let count = result.citations.length;
-		let cursor = result.nextCursor;
-		while (cursor && !cancelled) {
-			const pageResult = await fetchCombinedPage(query, effectiveGroup, pageSize, cursor);
-			count += pageResult.citations.length;
-			addFacetCounts(facetCounts, pageResult.citations);
-			allCitations.push(...pageResult.citations);
-			cursor = pageResult.nextCursor;
-			onUpdate(
-				buildSearchResult(result.citations, query, {
-					nextCursor: result.nextCursor,
-					total: exactFromBackend ? total : count,
-					totalIsExact: exactFromBackend,
-					loadingMore: true,
-					facets: countsToFacets(facetCounts)
-				})
-			);
-		}
-		if (!cancelled) {
-			onUpdate(
-				buildSearchResult(result.citations, query, {
-					nextCursor: result.nextCursor,
-					total: exactFromBackend ? total : count,
-					totalIsExact: true,
-					loadingMore: false,
-					facets: countsToFacets(facetCounts)
-				})
-			);
+		if (!hasMore) {
 			onAccumulated?.({ all: allCitations, complete: true });
 		}
-	}
 
-	return () => {
-		cancelled = true;
-	};
+		if (query.page === 1 && !query.cursor && hasMore) {
+			let count = result.citations.length;
+			let cursor = result.nextCursor;
+			while (cursor && !cancelled) {
+				ensureNotAborted();
+				const pageResult = await fetchCombinedPage(query, effectiveGroup, pageSize, cursor, signal);
+				count += pageResult.citations.length;
+				addFacetCounts(facetCounts, pageResult.citations);
+				allCitations.push(...pageResult.citations);
+				cursor = pageResult.nextCursor;
+				onUpdate(
+					buildSearchResult(result.citations, query, {
+						nextCursor: result.nextCursor,
+						total: exactFromBackend ? total : count,
+						totalIsExact: exactFromBackend,
+						loadingMore: true,
+						facets: countsToFacets(facetCounts),
+						edges: pageEdges,
+						edgesPagination: pageEdgesPagination
+					})
+				);
+			}
+			if (!cancelled) {
+				onUpdate(
+					buildSearchResult(result.citations, query, {
+						nextCursor: result.nextCursor,
+						total: exactFromBackend ? total : count,
+						totalIsExact: true,
+						loadingMore: false,
+						facets: countsToFacets(facetCounts),
+						edges: pageEdges,
+						edgesPagination: pageEdgesPagination
+					})
+				);
+				onAccumulated?.({ all: allCitations, complete: true });
+			}
+		}
+
+		cleanup();
+		return () => {
+			cancelled = true;
+			controller?.abort();
+			cleanup();
+		};
+	} catch (err) {
+		cleanup();
+		if ((err as Error)?.name === 'AbortError') {
+			return () => {
+				cancelled = true;
+				controller?.abort();
+				cleanup();
+			};
+		}
+		throw err;
+	}
 }

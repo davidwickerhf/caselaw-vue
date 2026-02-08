@@ -1,5 +1,5 @@
 import { createDefaultSearchQuery, DataSource, type ParsedToken, type QueryBuilderGroup, type QueryBuilderRule, type SearchQuery, type CommonSearchFilters, type SourceScope } from '~/lib/types';
-import { IMPORTANCE_LEVELS } from '~/lib/utils/constants';
+import { IMPORTANCE_LEVELS, RECHTSPRAAK_DOMAINS, RECHTSPRAAK_DOMAIN_ALIASES } from '~/lib/utils/constants';
 import { defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
 
 function genId(): string {
@@ -43,6 +43,11 @@ export function searchQueryToTokens(query: SearchQuery): ParsedToken[] {
 		}
 	};
 
+	const addExactDateToken = (value: string | undefined, type: ParsedToken['type'], label: string) => {
+		if (!value) return;
+		addToken({ id: genId(), type, value, display: `${label} ${value}` });
+	};
+
 	const addArticles = (values: string[], type: ParsedToken['type'], label: 'violated' | 'applied' | 'non-violated') => {
 		for (const num of values) {
 			addToken({ id: genId(), type, value: num, display: articleDisplay(label, num) });
@@ -65,6 +70,9 @@ export function searchQueryToTokens(query: SearchQuery): ParsedToken[] {
 	for (const keyword of [...query.keywords, ...scoped.echr.keywords, ...scoped.rs.keywords]) {
 		addToken({ id: genId(), type: 'keyword', value: keyword, display: keyword });
 	}
+	for (const title of [...query.title, ...scoped.echr.title, ...scoped.rs.title]) {
+		addToken({ id: genId(), type: 'title', value: title, display: title });
+	}
 	for (const ecli of [...query.eclis, ...scoped.echr.eclis, ...scoped.rs.eclis]) {
 		addToken({ id: genId(), type: 'ecli', value: ecli, display: ecli });
 	}
@@ -72,6 +80,10 @@ export function searchQueryToTokens(query: SearchQuery): ParsedToken[] {
 	addDateTokens(query.dateStart, query.dateEnd);
 	addDateTokens(scoped.echr.dateStart, scoped.echr.dateEnd);
 	addDateTokens(scoped.rs.dateStart, scoped.rs.dateEnd);
+	addExactDateToken(scoped.echr.dateJudgmentStart, 'date_judgment_start', 'Judgment after');
+	addExactDateToken(scoped.echr.dateJudgmentEnd, 'date_judgment_end', 'Judgment before');
+	addExactDateToken(scoped.echr.dateDecisionStart, 'date_decision_start', 'Decision after');
+	addExactDateToken(scoped.echr.dateDecisionEnd, 'date_decision_end', 'Decision before');
 
 	for (const doc of [...query.documentType, ...scoped.echr.documentType, ...scoped.rs.documentType]) {
 		addToken({ id: genId(), type: 'document_type', value: doc, display: doc });
@@ -80,11 +92,20 @@ export function searchQueryToTokens(query: SearchQuery): ParsedToken[] {
 		const label = IMPORTANCE_LEVELS.find((i) => i.value === imp)?.label || String(imp);
 		addToken({ id: genId(), type: 'importance', value: String(imp), display: label });
 	}
+	for (const lang of [...query.language, ...scoped.echr.language]) {
+		addToken({ id: genId(), type: 'language', value: lang, display: lang });
+	}
 	for (const inst of [...query.instances, ...scoped.rs.instances]) {
 		addToken({ id: genId(), type: 'instance', value: inst, display: inst });
 	}
 	for (const dom of [...query.domains, ...scoped.rs.domains]) {
 		addToken({ id: genId(), type: 'domain', value: dom, display: dom });
+	}
+	for (const article of [...query.articles, ...scoped.rs.articles]) {
+		addToken({ id: genId(), type: 'articles', value: article, display: article });
+	}
+	for (const law of [...query.selectedLaws, ...scoped.rs.selectedLaws]) {
+		addToken({ id: genId(), type: 'selected_laws', value: law, display: law });
 	}
 	if (query.sources.join(',') !== defaults.sources.join(',')) {
 		for (const src of query.sources) {
@@ -95,6 +116,31 @@ export function searchQueryToTokens(query: SearchQuery): ParsedToken[] {
 				display: src === DataSource.ECHR ? 'ECHR' : 'Rechtspraak',
 			});
 		}
+	}
+
+	if (query.degreesSource !== defaults.degreesSource) {
+		addToken({
+			id: genId(),
+			type: 'degree_source',
+			value: String(query.degreesSource),
+			display: `Degree source ${query.degreesSource}`
+		});
+	}
+	if (query.degreesTarget !== defaults.degreesTarget) {
+		addToken({
+			id: genId(),
+			type: 'degree_target',
+			value: String(query.degreesTarget),
+			display: `Degree target ${query.degreesTarget}`
+		});
+	}
+	if (query.isSubgraph) {
+		addToken({
+			id: genId(),
+			type: 'subgraph',
+			value: 'true',
+			display: 'Subgraph only'
+		});
 	}
 
 	return tokens;
@@ -115,8 +161,19 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 		if (normalized) pushRule('text', 'contains', normalized, scope);
 	};
 
+	const addTitle = (values: string[], scope: SourceScope) => {
+		for (const value of values) {
+			const normalized = normalizeText(value || '');
+			if (normalized) pushRule('title', 'contains', normalized, scope);
+		}
+	};
+
 	const addDateRules = (start: string | undefined, end: string | undefined, scope: SourceScope) => {
 		if (!start && !end) return;
+		if (start && end && start === end) {
+			pushRule('dateStart', 'equals', start, scope);
+			return;
+		}
 		if (start && end) {
 			const startYear = start.slice(0, 4);
 			const endYear = end.slice(0, 4);
@@ -125,12 +182,25 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 				return;
 			}
 		}
-		if (start) pushRule('year', 'after', start.slice(0, 4), scope);
-		if (end) pushRule('year', 'before', end.slice(0, 4), scope);
+		if (start) {
+			if (start.endsWith('-01-01')) {
+				pushRule('year', 'after', start.slice(0, 4), scope);
+			} else {
+				pushRule('dateStart', 'after', start, scope);
+			}
+		}
+		if (end) {
+			if (end.endsWith('-12-31')) {
+				pushRule('year', 'before', end.slice(0, 4), scope);
+			} else {
+				pushRule('dateEnd', 'before', end, scope);
+			}
+		}
 	};
 
 	addText(query.text, 'ANY');
-	for (const value of query.keywords) pushRule('keywords', 'contains', value, 'ANY');
+	addTitle(query.title, 'ANY');
+	for (const value of query.keywords) pushRule('text', 'contains', value, 'ANY');
 	for (const value of query.eclis) pushRule('ecli', 'equals', value, 'ANY');
 	addDateRules(query.dateStart, query.dateEnd, 'ANY');
 	for (const value of query.articleViolated) pushRule('article_violated', 'equals', value, 'ANY');
@@ -140,8 +210,11 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 	for (const value of query.applicationNumbers) pushRule('application_number', 'equals', value, 'ANY');
 	for (const value of query.documentType) pushRule('document_type', 'equals', value, 'ANY');
 	for (const value of query.importance) pushRule('importance', 'equals', String(value), 'ANY');
+	for (const value of query.language) pushRule('language', 'equals', value, 'ANY');
 	for (const value of query.instances) pushRule('instance', 'equals', value, 'ANY');
 	for (const value of query.domains) pushRule('domain', 'equals', value, 'ANY');
+	for (const value of query.articles) pushRule('articles', 'contains', value, 'ANY');
+	for (const value of query.selectedLaws) pushRule('selectedLaws', 'equals', value, 'ANY');
 	if (query.sources.join(',') !== defaults.sources.join(',')) {
 		for (const src of query.sources) {
 			pushRule('source', 'equals', src, 'ANY');
@@ -149,7 +222,8 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 	}
 
 	addText(scoped.echr.text, 'ECHR');
-	for (const value of scoped.echr.keywords) pushRule('keywords', 'contains', value, 'ECHR');
+	addTitle(scoped.echr.title, 'ECHR');
+	for (const value of scoped.echr.keywords) pushRule('text', 'contains', value, 'ECHR');
 	for (const value of scoped.echr.eclis) pushRule('ecli', 'equals', value, 'ECHR');
 	addDateRules(scoped.echr.dateStart, scoped.echr.dateEnd, 'ECHR');
 	for (const value of scoped.echr.articleViolated) pushRule('article_violated', 'equals', value, 'ECHR');
@@ -159,14 +233,38 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 	for (const value of scoped.echr.applicationNumbers) pushRule('application_number', 'equals', value, 'ECHR');
 	for (const value of scoped.echr.documentType) pushRule('document_type', 'equals', value, 'ECHR');
 	for (const value of scoped.echr.importance) pushRule('importance', 'equals', String(value), 'ECHR');
+	for (const value of scoped.echr.language) pushRule('language', 'equals', value, 'ECHR');
+	if (scoped.echr.dateJudgmentStart && scoped.echr.dateJudgmentEnd && scoped.echr.dateJudgmentStart === scoped.echr.dateJudgmentEnd) {
+		pushRule('date_judgment_start', 'equals', scoped.echr.dateJudgmentStart, 'ECHR');
+	} else {
+		if (scoped.echr.dateJudgmentStart) {
+			pushRule('date_judgment_start', 'after', scoped.echr.dateJudgmentStart, 'ECHR');
+		}
+		if (scoped.echr.dateJudgmentEnd) {
+			pushRule('date_judgment_end', 'before', scoped.echr.dateJudgmentEnd, 'ECHR');
+		}
+	}
+	if (scoped.echr.dateDecisionStart && scoped.echr.dateDecisionEnd && scoped.echr.dateDecisionStart === scoped.echr.dateDecisionEnd) {
+		pushRule('date_decision_start', 'equals', scoped.echr.dateDecisionStart, 'ECHR');
+	} else {
+		if (scoped.echr.dateDecisionStart) {
+			pushRule('date_decision_start', 'after', scoped.echr.dateDecisionStart, 'ECHR');
+		}
+		if (scoped.echr.dateDecisionEnd) {
+			pushRule('date_decision_end', 'before', scoped.echr.dateDecisionEnd, 'ECHR');
+		}
+	}
 
 	addText(scoped.rs.text, 'RS');
-	for (const value of scoped.rs.keywords) pushRule('keywords', 'contains', value, 'RS');
+	addTitle(scoped.rs.title, 'RS');
+	for (const value of scoped.rs.keywords) pushRule('text', 'contains', value, 'RS');
 	for (const value of scoped.rs.eclis) pushRule('ecli', 'equals', value, 'RS');
 	addDateRules(scoped.rs.dateStart, scoped.rs.dateEnd, 'RS');
 	for (const value of scoped.rs.documentType) pushRule('document_type', 'equals', value, 'RS');
 	for (const value of scoped.rs.instances) pushRule('instance', 'equals', value, 'RS');
 	for (const value of scoped.rs.domains) pushRule('domain', 'equals', value, 'RS');
+	for (const value of scoped.rs.articles) pushRule('articles', 'contains', value, 'RS');
+	for (const value of scoped.rs.selectedLaws) pushRule('selectedLaws', 'equals', value, 'RS');
 
 	if (rules.length === 0) {
 		rules.push({
@@ -201,6 +299,37 @@ function parseYear(value: string): number | null {
 	const currentYear = new Date().getFullYear();
 	if (!Number.isInteger(num) || num < 1900 || num > currentYear) return null;
 	return num;
+}
+
+function parseDateValue(value: string): string | null {
+	const trimmed = normalizeText(value);
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+	const today = new Date();
+	const date = new Date(trimmed);
+	if (Number.isNaN(date.getTime())) return null;
+	if (date > today) return null;
+	return trimmed;
+}
+
+function normalizeIso3(value: string): string | null {
+	const trimmed = normalizeText(value).toUpperCase();
+	if (!/^[A-Z]{3}$/.test(trimmed)) return null;
+	return trimmed;
+}
+
+const DOMAIN_SET = new Set(RECHTSPRAAK_DOMAINS.map((d) => d.toLowerCase()));
+const DOMAIN_ALIAS_MAP = new Map(
+	RECHTSPRAAK_DOMAIN_ALIASES.map((entry) => [entry.pattern.toLowerCase(), entry.value]),
+);
+
+function normalizeDomainValue(value: string): string {
+	const trimmed = normalizeText(value);
+	const lower = trimmed.toLowerCase();
+	if (!lower) return trimmed;
+	if (DOMAIN_SET.has(lower)) {
+		return RECHTSPRAAK_DOMAINS.find((d) => d.toLowerCase() === lower) || trimmed;
+	}
+	return DOMAIN_ALIAS_MAP.get(lower) || trimmed;
 }
 
 function ensureSingleDepth(group: QueryBuilderGroup): string | null {
@@ -253,10 +382,10 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 				addTextQuery(target, value);
 				break;
 			case 'title':
-				addTextQuery(target, value);
+				target.title.push(value);
 				break;
 			case 'keywords':
-				target.keywords.push(value);
+				addTextQuery(target, value);
 				break;
 			case 'ecli':
 				target.eclis.push(value);
@@ -298,6 +427,24 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 				}
 				break;
 			}
+			case 'dateStart': {
+				const dateValue = parseDateValue(value);
+				if (!dateValue) return { error: 'dateStart must be YYYY-MM-DD and not in the future.' };
+				if (rule.operator !== 'equals' && rule.operator !== 'after') {
+					return { error: 'Unsupported dateStart operator.' };
+				}
+				target.dateStart = dateValue;
+				break;
+			}
+			case 'dateEnd': {
+				const dateValue = parseDateValue(value);
+				if (!dateValue) return { error: 'dateEnd must be YYYY-MM-DD and not in the future.' };
+				if (rule.operator !== 'equals' && rule.operator !== 'before') {
+					return { error: 'Unsupported dateEnd operator.' };
+				}
+				target.dateEnd = dateValue;
+				break;
+			}
 			case 'document_type':
 				if (scope === 'RS') {
 					query.scoped.rs.documentType.push(value);
@@ -313,7 +460,15 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 				break;
 			case 'domain':
 				if (scope === 'ECHR') return { error: 'Legal Domain is not supported for ECHR.' };
-				query.scoped.rs.domains.push(value);
+				query.scoped.rs.domains.push(normalizeDomainValue(value));
+				break;
+			case 'articles':
+				if (scope === 'ECHR') return { error: 'Articles are not supported for ECHR.' };
+				query.scoped.rs.articles.push(value);
+				break;
+			case 'selectedLaws':
+				if (scope === 'ECHR') return { error: 'Selected laws are not supported for ECHR.' };
+				query.scoped.rs.selectedLaws.push(value);
 				break;
 			case 'importance': {
 				const imp = Number(value);
@@ -328,6 +483,65 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 					for (let i = 1; i <= imp; i += 1) targetSet.add(i);
 				} else {
 					return { error: 'Unsupported importance operator.' };
+				}
+				break;
+			}
+			case 'language': {
+				if (scope === 'RS') return { error: 'Language is not supported for Rechtspraak.' };
+				const code = normalizeIso3(value);
+				if (!code) return { error: 'Language must be ISO-3.' };
+				query.scoped.echr.language.push(code);
+				break;
+			}
+			case 'date_judgment_start': {
+				if (scope === 'RS') return { error: 'Judgment date is not supported for Rechtspraak.' };
+				const dateValue = parseDateValue(value);
+				if (!dateValue) return { error: 'Judgment start date must be YYYY-MM-DD.' };
+				if (rule.operator !== 'equals' && rule.operator !== 'after') {
+					return { error: 'Unsupported judgment date operator.' };
+				}
+				query.scoped.echr.dateJudgmentStart = dateValue;
+				if (rule.operator === 'equals') {
+					query.scoped.echr.dateJudgmentEnd = dateValue;
+				}
+				break;
+			}
+			case 'date_judgment_end': {
+				if (scope === 'RS') return { error: 'Judgment date is not supported for Rechtspraak.' };
+				const dateValue = parseDateValue(value);
+				if (!dateValue) return { error: 'Judgment end date must be YYYY-MM-DD.' };
+				if (rule.operator !== 'equals' && rule.operator !== 'before') {
+					return { error: 'Unsupported judgment date operator.' };
+				}
+				query.scoped.echr.dateJudgmentEnd = dateValue;
+				if (rule.operator === 'equals') {
+					query.scoped.echr.dateJudgmentStart = dateValue;
+				}
+				break;
+			}
+			case 'date_decision_start': {
+				if (scope === 'RS') return { error: 'Decision date is not supported for Rechtspraak.' };
+				const dateValue = parseDateValue(value);
+				if (!dateValue) return { error: 'Decision start date must be YYYY-MM-DD.' };
+				if (rule.operator !== 'equals' && rule.operator !== 'after') {
+					return { error: 'Unsupported decision date operator.' };
+				}
+				query.scoped.echr.dateDecisionStart = dateValue;
+				if (rule.operator === 'equals') {
+					query.scoped.echr.dateDecisionEnd = dateValue;
+				}
+				break;
+			}
+			case 'date_decision_end': {
+				if (scope === 'RS') return { error: 'Decision date is not supported for Rechtspraak.' };
+				const dateValue = parseDateValue(value);
+				if (!dateValue) return { error: 'Decision end date must be YYYY-MM-DD.' };
+				if (rule.operator !== 'equals' && rule.operator !== 'before') {
+					return { error: 'Unsupported decision date operator.' };
+				}
+				query.scoped.echr.dateDecisionEnd = dateValue;
+				if (rule.operator === 'equals') {
+					query.scoped.echr.dateDecisionStart = dateValue;
 				}
 				break;
 			}
@@ -366,6 +580,7 @@ export function searchQueryToParams(query: SearchQuery): URLSearchParams {
 	const scoped = query.scoped ?? defaults.scoped;
 
 	if (query.text) params.set('q', query.text);
+	if (query.title.length) params.set('title', query.title.join(','));
 	if (query.sources.join(',') !== defaults.sources.join(',')) params.set('sources', query.sources.join(','));
 	if (query.keywords.length) params.set('keywords', query.keywords.join(','));
 	if (query.eclis.length) params.set('eclis', query.eclis.join(','));
@@ -373,17 +588,24 @@ export function searchQueryToParams(query: SearchQuery): URLSearchParams {
 	if (query.dateStart) params.set('dateStart', query.dateStart);
 	if (query.dateEnd) params.set('dateEnd', query.dateEnd);
 	if (scoped.echr.text) params.set('echrQ', scoped.echr.text);
+	if (scoped.echr.title.length) params.set('echrTitle', scoped.echr.title.join(','));
 	if (scoped.echr.keywords.length) params.set('echrKeywords', scoped.echr.keywords.join(','));
 	if (scoped.echr.eclis.length) params.set('echrEclis', scoped.echr.eclis.join(','));
 	if (scoped.echr.dateStart) params.set('echrDateStart', scoped.echr.dateStart);
 	if (scoped.echr.dateEnd) params.set('echrDateEnd', scoped.echr.dateEnd);
+	if (scoped.echr.dateJudgmentStart) params.set('echrJudgmentStart', scoped.echr.dateJudgmentStart);
+	if (scoped.echr.dateJudgmentEnd) params.set('echrJudgmentEnd', scoped.echr.dateJudgmentEnd);
+	if (scoped.echr.dateDecisionStart) params.set('echrDecisionStart', scoped.echr.dateDecisionStart);
+	if (scoped.echr.dateDecisionEnd) params.set('echrDecisionEnd', scoped.echr.dateDecisionEnd);
 	if (scoped.echr.articleViolated.length) params.set('echrArticleViolated', scoped.echr.articleViolated.join(','));
 	if (scoped.echr.articleApplied.length) params.set('echrArticleApplied', scoped.echr.articleApplied.join(','));
 	if (scoped.echr.articleNonViolated.length) params.set('echrArticleNonViolated', scoped.echr.articleNonViolated.join(','));
 	if (scoped.echr.respondentState.length) params.set('echrRespondentState', scoped.echr.respondentState.join(','));
 	if (scoped.echr.documentType.length) params.set('echrDocumentType', scoped.echr.documentType.join(','));
 	if (scoped.echr.importance.length) params.set('echrImportance', scoped.echr.importance.join(','));
+	if (scoped.echr.language.length) params.set('echrLanguage', scoped.echr.language.join(','));
 	if (scoped.rs.text) params.set('rsQ', scoped.rs.text);
+	if (scoped.rs.title.length) params.set('rsTitle', scoped.rs.title.join(','));
 	if (scoped.rs.keywords.length) params.set('rsKeywords', scoped.rs.keywords.join(','));
 	if (scoped.rs.eclis.length) params.set('rsEclis', scoped.rs.eclis.join(','));
 	if (scoped.rs.dateStart) params.set('rsDateStart', scoped.rs.dateStart);
@@ -391,14 +613,19 @@ export function searchQueryToParams(query: SearchQuery): URLSearchParams {
 	if (scoped.rs.documentType.length) params.set('rsDocumentType', scoped.rs.documentType.join(','));
 	if (scoped.rs.instances.length) params.set('rsInstances', scoped.rs.instances.join(','));
 	if (scoped.rs.domains.length) params.set('rsDomains', scoped.rs.domains.join(','));
+	if (scoped.rs.articles.length) params.set('rsArticles', scoped.rs.articles.join(','));
+	if (scoped.rs.selectedLaws.length) params.set('rsSelectedLaws', scoped.rs.selectedLaws.join(','));
 	if (query.articleViolated.length) params.set('articleViolated', query.articleViolated.join(','));
 	if (query.articleApplied.length) params.set('articleApplied', query.articleApplied.join(','));
 	if (query.articleNonViolated.length) params.set('articleNonViolated', query.articleNonViolated.join(','));
 	if (query.respondentState.length) params.set('respondentState', query.respondentState.join(','));
 	if (query.documentType.length) params.set('documentType', query.documentType.join(','));
 	if (query.importance.length) params.set('importance', query.importance.join(','));
+	if (query.language.length) params.set('language', query.language.join(','));
 	if (query.instances.length) params.set('instances', query.instances.join(','));
 	if (query.domains.length) params.set('domains', query.domains.join(','));
+	if (query.articles.length) params.set('articles', query.articles.join(','));
+	if (query.selectedLaws.length) params.set('selectedLaws', query.selectedLaws.join(','));
 	if (query.sortBy !== defaults.sortBy) params.set('sortBy', query.sortBy);
 	if (query.sortDirection !== defaults.sortDirection) params.set('sortDirection', query.sortDirection);
 	if (query.pageSize !== defaults.pageSize) params.set('pageSize', String(query.pageSize));
@@ -428,10 +655,13 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 
 	const q = params.get('q');
 	if (q) query.text = q;
+	query.title = splitList(params.get('title'));
 	const echrQ = params.get('echrQ');
 	if (echrQ) query.scoped.echr.text = echrQ;
+	query.scoped.echr.title = splitList(params.get('echrTitle'));
 	const rsQ = params.get('rsQ');
 	if (rsQ) query.scoped.rs.text = rsQ;
+	query.scoped.rs.title = splitList(params.get('rsTitle'));
 
 	query.keywords = splitList(params.get('keywords'));
 	query.eclis = splitList(params.get('eclis'));
@@ -449,6 +679,8 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 	query.scoped.rs.documentType = splitList(params.get('rsDocumentType'));
 	query.scoped.rs.instances = splitList(params.get('rsInstances'));
 	query.scoped.rs.domains = splitList(params.get('rsDomains'));
+	query.scoped.rs.articles = splitList(params.get('rsArticles'));
+	query.scoped.rs.selectedLaws = splitList(params.get('rsSelectedLaws'));
 	query.articleViolated = splitList(params.get('articleViolated'));
 	query.articleApplied = splitList(params.get('articleApplied'));
 	query.articleNonViolated = splitList(params.get('articleNonViolated'));
@@ -456,6 +688,8 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 	query.documentType = splitList(params.get('documentType'));
 	query.instances = splitList(params.get('instances'));
 	query.domains = splitList(params.get('domains'));
+	query.articles = splitList(params.get('articles'));
+	query.selectedLaws = splitList(params.get('selectedLaws'));
 
 	const importance = splitList(params.get('importance'));
 	if (importance.length > 0) {
@@ -469,6 +703,8 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 		if (parsed.length !== echrImportance.length) return { error: 'ECHR importance must be numeric.' };
 		query.scoped.echr.importance = parsed;
 	}
+	query.language = splitList(params.get('language')).map((v) => v.toUpperCase());
+	query.scoped.echr.language = splitList(params.get('echrLanguage')).map((v) => v.toUpperCase());
 
 	const dateStart = params.get('dateStart');
 	const dateEnd = params.get('dateEnd');
@@ -489,6 +725,26 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 	if (echrDateEnd) {
 		if (!isValidDate(echrDateEnd)) return { error: 'Invalid echrDateEnd format.' };
 		query.scoped.echr.dateEnd = echrDateEnd;
+	}
+	const echrJudgmentStart = params.get('echrJudgmentStart');
+	if (echrJudgmentStart) {
+		if (!isValidDate(echrJudgmentStart)) return { error: 'Invalid echrJudgmentStart format.' };
+		query.scoped.echr.dateJudgmentStart = echrJudgmentStart;
+	}
+	const echrJudgmentEnd = params.get('echrJudgmentEnd');
+	if (echrJudgmentEnd) {
+		if (!isValidDate(echrJudgmentEnd)) return { error: 'Invalid echrJudgmentEnd format.' };
+		query.scoped.echr.dateJudgmentEnd = echrJudgmentEnd;
+	}
+	const echrDecisionStart = params.get('echrDecisionStart');
+	if (echrDecisionStart) {
+		if (!isValidDate(echrDecisionStart)) return { error: 'Invalid echrDecisionStart format.' };
+		query.scoped.echr.dateDecisionStart = echrDecisionStart;
+	}
+	const echrDecisionEnd = params.get('echrDecisionEnd');
+	if (echrDecisionEnd) {
+		if (!isValidDate(echrDecisionEnd)) return { error: 'Invalid echrDecisionEnd format.' };
+		query.scoped.echr.dateDecisionEnd = echrDecisionEnd;
 	}
 	const rsDateStart = params.get('rsDateStart');
 	if (rsDateStart) {

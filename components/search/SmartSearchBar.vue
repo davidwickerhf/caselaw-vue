@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, watch, onBeforeUnmount } from 'vue'
 import { Sparkles, X, Loader2, Search } from 'lucide-vue-next'
 import SearchSuggestions from './SearchSuggestions.vue'
 import { useSmartSearch } from '~/composables/useSmartSearch'
@@ -35,12 +35,25 @@ const editorEl = ref<HTMLDivElement>()
 const showSuggestions = ref(false)
 const activeIndex = ref(-1)
 const suppressRender = ref(false)
+const isFocused = ref(false)
+const animatedText = ref('')
+const animateChar = ref(0)
+let animateTimer: ReturnType<typeof setTimeout> | null = null
+const shuffledExamples = ref<string[]>([])
 
 onMounted(() => {
   if (props.autofocus) {
     nextTick(() => editorEl.value?.focus())
   }
+  shuffledExamples.value = shuffleExamples(SEARCH_EXAMPLES)
   renderEditorFromSegments(smartSearch.segments.value)
+})
+
+onBeforeUnmount(() => {
+  if (animateTimer) {
+    clearTimeout(animateTimer)
+    animateTimer = null
+  }
 })
 
 onClickOutside(containerEl, () => {
@@ -81,7 +94,7 @@ function normalizeExampleQuery(text: string): string {
 
 const exampleSuggestions = computed(() => {
   const query = normalizeExampleQuery(smartSearch.rawText.value)
-  const pool = SEARCH_EXAMPLES
+  const pool = shuffledExamples.value.length ? shuffledExamples.value : SEARCH_EXAMPLES
   const matches = query
     ? pool.filter((item) => normalizeExampleQuery(item).includes(query))
     : pool
@@ -310,6 +323,7 @@ function selectExampleItem(text: string) {
 }
 
 function submit() {
+  smartSearch.parseNow()
   smartSearch.setSearchString(smartSearch.rawText.value || '')
   if (props.chips) smartSearch.acceptAllSuggestions()
   else smartSearch.acceptAllSuggestionsSoft()
@@ -319,6 +333,7 @@ function submit() {
 
 function clear() {
   smartSearch.clearAll()
+  renderEditorFromSegments([])
   emit('clear')
   nextTick(() => editorEl.value?.focus())
 }
@@ -335,6 +350,7 @@ function onSuggestionReject(id: string) {
 }
 
 function handleBlur() {
+  isFocused.value = false
   // Delay to allow click events on suggestions to fire first,
   // then check if focus is still within the container
   globalThis.setTimeout(() => {
@@ -367,12 +383,25 @@ const showParsedSuggestions = computed(
 const showExampleSuggestions = computed(
   () => showSuggestions.value && !hasParsedParameters.value && exampleSuggestions.value.length > 0
 )
+const hasQueryContext = computed(() => {
+  const group = smartSearch.queryBuilderGroup.value
+  const hasRules = (g: typeof group): boolean => {
+    if (g.rules.some((rule) => rule.value && rule.value.trim())) return true
+    if (g.groups.some((sub) => hasRules(sub))) return true
+    return false
+  }
+  return hasRules(group)
+})
+const shouldAnimatePlaceholder = computed(() => {
+  return !isFocused.value && !hasContent.value && !hasQueryContext.value && !showParsedSuggestions.value
+})
 
 function suggestionTypeFromToken(token: ParsedToken) {
   if (token.type.startsWith('article')) return 'article'
   if (token.type === 'respondent_state') return 'state'
   if (token.type === 'year' || token.type === 'date_start' || token.type === 'date_end') return 'date'
   if (token.type === 'document_type') return 'document'
+  if (token.type === 'degree_source' || token.type === 'degree_target' || token.type === 'degree_depth' || token.type === 'subgraph') return 'graph'
   return 'tag'
 }
 
@@ -386,10 +415,82 @@ function handleEditorClick(event: MouseEvent) {
   }
 }
 
+function pickNextExample(): string {
+  const pool = shuffledExamples.value.length ? shuffledExamples.value : SEARCH_EXAMPLES
+  if (!pool.length) return ''
+  const index = Math.floor(Math.random() * pool.length)
+  return pool[index]
+}
+
+function shuffleExamples(list: string[]): string[] {
+  const arr = [...list]
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+
+function stopPlaceholderAnimation() {
+  if (animateTimer) {
+    clearTimeout(animateTimer)
+    animateTimer = null
+  }
+  animatedText.value = ''
+  animateChar.value = 0
+}
+
+function schedulePlaceholderAnimation() {
+  if (animateTimer) {
+    clearTimeout(animateTimer)
+    animateTimer = null
+  }
+  if (!shouldAnimatePlaceholder.value) {
+    animatedText.value = ''
+    animateChar.value = 0
+    return
+  }
+  if (!animatedText.value) {
+    animatedText.value = pickNextExample()
+    animateChar.value = 0
+  }
+
+  const full = animatedText.value
+  const nextCharCount = animateChar.value + 1
+
+  if (nextCharCount <= full.length) {
+    animateChar.value = nextCharCount
+    animateTimer = setTimeout(schedulePlaceholderAnimation, 55)
+    return
+  }
+
+  animateTimer = setTimeout(() => {
+    const erase = () => {
+      if (!shouldAnimatePlaceholder.value) {
+        stopPlaceholderAnimation()
+        return
+      }
+      if (animateChar.value > 0) {
+        animateChar.value -= 1
+        animateTimer = setTimeout(erase, 22)
+      } else {
+        animatedText.value = pickNextExample()
+        animateTimer = setTimeout(schedulePlaceholderAnimation, 200)
+      }
+    }
+    erase()
+  }, 1200)
+}
+
 watch(
   () => smartSearch.segments.value,
   (next) => {
-    if (suppressRender.value) return
+    if (suppressRender.value) {
+      if (next.length === 0) {
+        renderEditorFromSegments(next)
+      }
+      return
+    }
     renderEditorFromSegments(next)
   },
   { deep: true }
@@ -402,6 +503,14 @@ watch(
     renderEditorFromSegments(smartSearch.segments.value)
   },
   { deep: true }
+)
+
+watch(
+  () => shouldAnimatePlaceholder.value,
+  () => {
+    schedulePlaceholderAnimation()
+  },
+  { immediate: true }
 )
 </script>
 
@@ -431,22 +540,34 @@ watch(
       </div>
 
       <!-- Inline editor with chips -->
-      <div
-        v-once
-        ref="editorEl"
-        class="smart-search-editor flex-1 min-w-[140px] outline-none"
-        :class="[size === 'large' ? 'text-base' : 'text-sm']"
-        contenteditable="true"
-        role="textbox"
-        aria-multiline="false"
-        spellcheck="false"
-        data-placeholder="Search cases, articles, countries, years..."
-        @input="handleInput"
-        @keydown="handleKeydown"
-        @focus="showSuggestions = true"
-        @blur="handleBlur"
-        @click="handleEditorClick"
-      />
+      <div class="relative flex-1 min-w-[140px]">
+        <div
+          ref="editorEl"
+          class="smart-search-editor relative z-10 outline-none"
+          :class="[
+            size === 'large' ? 'text-base' : 'text-sm',
+            shouldAnimatePlaceholder ? 'hide-placeholder' : ''
+          ]"
+          contenteditable="true"
+          role="textbox"
+          aria-multiline="false"
+          spellcheck="false"
+          :data-placeholder="shouldAnimatePlaceholder ? '' : 'Search cases, articles, countries, years...'"
+          @input="handleInput"
+          @keydown="handleKeydown"
+          @focus="() => { isFocused = true; showSuggestions = true }"
+          @blur="handleBlur"
+          @click="handleEditorClick"
+        />
+        <div
+          v-if="shouldAnimatePlaceholder"
+          class="pointer-events-none absolute inset-0 flex items-center text-muted-foreground/50"
+          :class="[size === 'large' ? 'text-base' : 'text-sm']"
+          aria-hidden="true"
+        >
+          {{ animatedText.slice(0, animateChar) }}
+        </div>
+      </div>
 
       <!-- Action buttons -->
       <div class="flex items-center gap-1.5 shrink-0">

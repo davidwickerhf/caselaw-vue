@@ -12,24 +12,34 @@ function ruleToText(rule: { field: string; operator: string; value: string; sour
     const scopeLabel = SCOPE_LABELS[rule.sourceScope || 'ANY'] || 'Any';
     const fieldLabel = QUERY_BUILDER_FIELDS_BY_SCOPE[rule.sourceScope || 'ANY']?.find((f) => f.value === rule.field)?.label || rule.field;
     const opLabel = QUERY_BUILDER_OPERATORS[rule.field]?.find((o) => o.value === rule.operator)?.label || rule.operator;
-    return `${scopeLabel}: ${fieldLabel} ${opLabel} "${rule.value}"`;
+    const shouldQuote = rule.operator === 'contains' || rule.operator === 'not_contains' || rule.field === 'keywords';
+    const valueText = shouldQuote ? `"${rule.value}"` : rule.value;
+    return `${scopeLabel}: ${fieldLabel} ${opLabel} ${valueText}`;
 }
 
 export type QuerySummarySegment =
     | { type: 'text'; text: string }
     | { type: 'value'; text: string; ruleId: string }
-    | { type: 'scope'; text: string; ruleId: string };
+    | { type: 'scope'; text: string; ruleId: string }
+    | { type: 'meta'; text: string; metaKey: 'degree_source' | 'degree_target' | 'subgraph' };
+
+export type QuerySummaryMeta = {
+    degreesSource?: number;
+    degreesTarget?: number;
+    isSubgraph?: boolean;
+};
 
 function ruleToSegments(rule: { id: string; field: string; operator: string; value: string; sourceScope: SourceScope }): QuerySummarySegment[] {
     if (!rule.value.trim()) return [];
     const scopeLabel = SCOPE_LABELS[rule.sourceScope || 'ANY'] || 'Any';
     const fieldLabel = QUERY_BUILDER_FIELDS_BY_SCOPE[rule.sourceScope || 'ANY']?.find((f) => f.value === rule.field)?.label || rule.field;
     const opLabel = QUERY_BUILDER_OPERATORS[rule.field]?.find((o) => o.value === rule.operator)?.label || rule.operator;
+    const wrapValue = rule.operator === 'contains' || rule.operator === 'not_contains' || rule.field === 'keywords';
     return [
         { type: 'scope', text: scopeLabel, ruleId: rule.id },
-        { type: 'text', text: `: ${fieldLabel} ${opLabel} "` },
+        { type: 'text', text: wrapValue ? `: ${fieldLabel} ${opLabel} "` : `: ${fieldLabel} ${opLabel} ` },
         { type: 'value', text: rule.value, ruleId: rule.id },
-        { type: 'text', text: '"' }
+        ...(wrapValue ? [{ type: 'text', text: '"' } as QuerySummarySegment] : [])
     ];
 }
 
@@ -42,6 +52,11 @@ function groupToText(group: QueryBuilderGroup): string {
     for (const sub of group.groups) {
         const subText = groupToText(sub);
         if (subText) parts.push(`(${subText})`);
+    }
+    if (parts.length === 0) return '';
+    if (group.operator === 'NOT') {
+        const inner = parts.join(' AND ');
+        return parts.length > 1 ? `NOT (${inner})` : `NOT ${inner}`;
     }
     return parts.join(` ${group.operator} `);
 }
@@ -60,6 +75,17 @@ function groupToSegments(group: QueryBuilderGroup): QuerySummarySegment[] {
     }
 
     if (parts.length === 0) return [];
+    if (group.operator === 'NOT') {
+        const joined: QuerySummarySegment[] = [];
+        parts.forEach((part, idx) => {
+            if (idx > 0) joined.push({ type: 'text', text: ' AND ' });
+            joined.push(...part);
+        });
+        const wrapped = parts.length > 1;
+        return wrapped
+            ? [{ type: 'text', text: 'NOT (' }, ...joined, { type: 'text', text: ')' }]
+            : [{ type: 'text', text: 'NOT ' }, ...joined];
+    }
     if (parts.length === 1) return parts[0];
 
     const joined: QuerySummarySegment[] = [];
@@ -77,6 +103,37 @@ export function summarizeQueryBuilder(group: QueryBuilderGroup, maxLength = 160)
     return `${text.slice(0, maxLength - 1)}…`;
 }
 
-export function buildQuerySummarySegments(group: QueryBuilderGroup): QuerySummarySegment[] {
-    return groupToSegments(group);
+function buildDegreeSegments(meta?: QuerySummaryMeta, hasBase = false): QuerySummarySegment[] {
+    if (!meta) return [];
+    const segments: QuerySummarySegment[] = [];
+    let prefix = hasBase ? ' AND ' : '';
+
+    const addMeta = (label: string, key: QuerySummarySegment['metaKey'], value: string) => {
+        segments.push({ type: 'text', text: `${prefix}${label} ` });
+        segments.push({ type: 'meta', metaKey: key, text: value });
+        prefix = ' AND ';
+    };
+
+    if (typeof meta.degreesSource === 'number' && meta.degreesSource > 0) {
+        addMeta('Breadth', 'degree_source', String(meta.degreesSource));
+    }
+    if (typeof meta.degreesTarget === 'number' && meta.degreesTarget > 0) {
+        addMeta('Target degree', 'degree_target', String(meta.degreesTarget));
+    }
+    if (meta.isSubgraph) {
+        addMeta('Subgraph', 'subgraph', 'on');
+    }
+
+    return segments;
+}
+
+export function buildQuerySummarySegments(
+    group: QueryBuilderGroup,
+    meta?: QuerySummaryMeta
+): QuerySummarySegment[] {
+    const base = groupToSegments(group);
+    const extras = buildDegreeSegments(meta, base.length > 0);
+    if (base.length === 0) return extras;
+    if (extras.length === 0) return base;
+    return [...base, ...extras];
 }

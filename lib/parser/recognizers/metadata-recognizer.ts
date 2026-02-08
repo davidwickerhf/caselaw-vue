@@ -1,7 +1,8 @@
 import {
     IMPORTANCE_LEVELS,
     RECHTSPRAAK_INSTANCES,
-    RECHTSPRAAK_DOMAINS
+    RECHTSPRAAK_DOMAINS,
+    RECHTSPRAAK_DOMAIN_ALIASES
 } from '~/lib/utils/constants';
 import type { ParsedToken, ParseSuggestion } from '~/lib/types';
 
@@ -12,6 +13,10 @@ function genId(): string {
 // Pre-build sorted lists (longest first for multi-word matches)
 const SORTED_INSTANCES = [...RECHTSPRAAK_INSTANCES].sort((a, b) => b.length - a.length);
 const SORTED_DOMAINS = [...RECHTSPRAAK_DOMAINS].sort((a, b) => b.length - a.length);
+const DOMAIN_PATTERNS = [
+    ...RECHTSPRAAK_DOMAINS.map((value) => ({ pattern: value, value })),
+    ...RECHTSPRAAK_DOMAIN_ALIASES
+].sort((a, b) => b.pattern.length - a.pattern.length);
 
 const DOC_TYPE_ALIASES: { pattern: string; value: string; label: string }[] = [
     { pattern: 'judgment', value: 'HEJUD', label: 'Judgment' },
@@ -135,6 +140,55 @@ function matchList(
     return suggestions;
 }
 
+function matchDomainPatterns(
+    input: string,
+    lowerInput: string,
+    consumed: [number, number][]
+): ParseSuggestion[] {
+    const suggestions: ParseSuggestion[] = [];
+    for (const { pattern, value } of DOMAIN_PATTERNS) {
+        const patternLower = pattern.toLowerCase();
+        let searchFrom = 0;
+        while (true) {
+            const idx = lowerInput.indexOf(patternLower, searchFrom);
+            if (idx === -1) break;
+            const start = idx;
+            const end = idx + patternLower.length;
+
+            if (start > 0 && /\w/.test(input[start - 1])) {
+                searchFrom = idx + 1;
+                continue;
+            }
+            if (end < input.length && /\w/.test(input[end])) {
+                searchFrom = idx + 1;
+                continue;
+            }
+            if (consumed.some(([cs, ce]) => (start >= cs && start < ce) || (end > cs && end <= ce))) {
+                searchFrom = idx + 1;
+                continue;
+            }
+
+            const token: ParsedToken = {
+                id: genId(),
+                type: 'domain',
+                value,
+                display: value,
+            };
+            suggestions.push({
+                id: genId(),
+                trigger: input.slice(start, end),
+                triggerStart: start,
+                triggerEnd: end,
+                token,
+                preview: value,
+            });
+            consumed.push([start, end]);
+            searchFrom = end;
+        }
+    }
+    return suggestions;
+}
+
 export function recognizeMetadata(input: string): MetadataRecognizerResult {
     const tokens: ParsedToken[] = [];
     const suggestions: ParseSuggestion[] = [];
@@ -240,8 +294,8 @@ export function recognizeMetadata(input: string): MetadataRecognizerResult {
     // 4. Rechtspraak instances
     suggestions.push(...matchList(input, lowerInput, SORTED_INSTANCES, 'instance', consumed));
 
-    // 5. Rechtspraak domains
-    suggestions.push(...matchList(input, lowerInput, SORTED_DOMAINS, 'domain', consumed));
+    // 5. Rechtspraak domains (Dutch + English aliases => Dutch)
+    suggestions.push(...matchDomainPatterns(input, lowerInput, consumed));
 
     return { tokens, suggestions, consumed };
 }

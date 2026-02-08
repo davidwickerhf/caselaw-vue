@@ -1,7 +1,7 @@
 import type { QueryBuilderGroup, QueryBuilderRule, ParsedToken, ParseSuggestion, SourceScope } from '~/lib/types';
 import { parseSearchInput } from '~/lib/parser/search-parser';
 import { tokenToRule } from '~/lib/parser/query-builder-mapper';
-import { isFieldAllowed } from '~/lib/utils/query-builder-config';
+import { isFieldAllowed, QUERY_BUILDER_FIELDS_BY_SCOPE, QUERY_BUILDER_OPERATORS } from '~/lib/utils/query-builder-config';
 
 type PositionedRule = {
     rule: QueryBuilderRule;
@@ -29,6 +29,8 @@ const OR_WORD_RE = /\b(?:or|either|of|ofwel|dan\s+wel|wel\s+of)\b/i;
 const AND_WORD_RE = /\b(?:and|with|plus|en|met|alsook|evenals|samen\s+met)\b/i;
 const ECHR_SCOPE_RE = /\b(?:echr|hudoc|ehrm|europees\s+hof|hof\s+voor\s+de\s+rechten\s+van\s+de\s+mens|mensenrechtenhof|mensenrechten|strasbourg)\b/i;
 const RS_SCOPE_RE = /\b(?:rs|rechtspraak|rechtspraak\.nl|nederlandse\s+rechtspraak)\b/i;
+const EXPLICIT_SCOPE_LABEL_RE = /(^|\s|\()(any|echr|rechtspraak)\s*:/gi;
+const PREVIEW_SCOPE_LABEL_RE = /(^|\s|\()(Any|ECHR|Rechtspraak)\s*:/i;
 
 const NOT_EQUALS_FIELDS = new Set(['respondent_state', 'source']);
 const NOT_CONTAINS_FIELDS = new Set([
@@ -41,12 +43,46 @@ const NOT_CONTAINS_FIELDS = new Set([
     'article_non_violated'
 ]);
 
+const PREVIEW_SCOPE_LABELS: Record<string, SourceScope> = {
+    any: 'ANY',
+    echr: 'ECHR',
+    rechtspraak: 'RS'
+};
+
+const FIELD_LABELS = Object.values(QUERY_BUILDER_FIELDS_BY_SCOPE)
+    .flat()
+    .flatMap((field) => ([
+        {
+            label: field.label,
+            labelLower: field.label.toLowerCase(),
+            field: field.value
+        },
+        {
+            label: field.value,
+            labelLower: field.value.toLowerCase(),
+            field: field.value
+        }
+    ]))
+    .sort((a, b) => b.label.length - a.label.length);
+
+const OP_LABELS_BY_FIELD: Record<string, { label: string; labelLower: string; value: string }[]> = Object.entries(QUERY_BUILDER_OPERATORS)
+    .reduce((acc, [field, ops]) => {
+        acc[field] = [...ops]
+            .map((op) => ({ label: op.label, labelLower: op.label.toLowerCase(), value: op.value }))
+            .sort((a, b) => b.label.length - a.label.length);
+        return acc;
+    }, {} as Record<string, { label: string; labelLower: string; value: string }[]>);
+
 function genId(): string {
     return Math.random().toString(36).slice(2, 10);
 }
 
 function normalizeWhitespace(text: string): string {
     return text.replace(/\s+/g, ' ').trim();
+}
+
+function maskScopeLabels(input: string): string {
+    return input.replace(EXPLICIT_SCOPE_LABEL_RE, (match) => ' '.repeat(match.length));
 }
 
 function removeSpans(input: string, spans: [number, number][]): string {
@@ -95,9 +131,193 @@ function detectNegation(text: string): boolean {
 }
 
 function detectScope(text: string): SourceScope | null {
+    let explicitScope: SourceScope | null = null;
+    let match: RegExpExecArray | null = null;
+    while ((match = EXPLICIT_SCOPE_LABEL_RE.exec(text)) !== null) {
+        const value = (match[2] || '').toLowerCase();
+        explicitScope = value === 'any' ? 'ANY' : value === 'echr' ? 'ECHR' : 'RS';
+    }
+    EXPLICIT_SCOPE_LABEL_RE.lastIndex = 0;
+    if (explicitScope) return explicitScope;
     if (ECHR_SCOPE_RE.test(text)) return 'ECHR';
     if (RS_SCOPE_RE.test(text)) return 'RS';
     return null;
+}
+
+function parsePreviewRuleText(text: string): QueryBuilderRule | null {
+    const match = text.match(/^\s*(Any|ECHR|Rechtspraak)\s*:\s*(.+)$/i);
+    if (!match) return null;
+    const scopeLabel = match[1].toLowerCase();
+    const scope = PREVIEW_SCOPE_LABELS[scopeLabel];
+    if (!scope) return null;
+    let rest = match[2].trim();
+    const restLower = rest.toLowerCase();
+    const fieldMatch = FIELD_LABELS.find((f) => restLower.startsWith(f.labelLower));
+    if (!fieldMatch) return null;
+    rest = rest.slice(fieldMatch.label.length).trim();
+    const opOptions = OP_LABELS_BY_FIELD[fieldMatch.field] || [];
+    const restOpLower = rest.toLowerCase();
+    const opMatch = opOptions.find((op) => restOpLower.startsWith(op.labelLower));
+    if (!opMatch) return null;
+    rest = rest.slice(opMatch.label.length).trim();
+    let value = rest.trim();
+    if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+        value = value.slice(1, -1);
+    }
+    return {
+        id: genId(),
+        field: fieldMatch.field,
+        operator: opMatch.value,
+        value,
+        sourceScope: scope
+    };
+}
+
+type PreviewToken =
+    | { type: 'rule'; text: string }
+    | { type: 'op'; value: 'AND' | 'OR' | 'NOT' }
+    | { type: 'lparen' }
+    | { type: 'rparen' };
+
+const OP_WORDS: Array<'AND' | 'OR' | 'NOT'> = ['AND', 'OR', 'NOT'];
+
+function matchOperatorAt(input: string, index: number): 'AND' | 'OR' | 'NOT' | null {
+    const lower = input.toLowerCase();
+    for (const word of OP_WORDS) {
+        const w = word.toLowerCase();
+        if (!lower.startsWith(w, index)) continue;
+        const prev = index - 1;
+        const next = index + w.length;
+        if (prev >= 0 && !/\s|\(/.test(input[prev])) continue;
+        if (next < input.length && !/\s|\)/.test(input[next])) continue;
+        return word;
+    }
+    return null;
+}
+
+function tokenizePreview(input: string): PreviewToken[] {
+    const tokens: PreviewToken[] = [];
+    let i = 0;
+    while (i < input.length) {
+        const ch = input[i];
+        if (/\s/.test(ch)) {
+            i += 1;
+            continue;
+        }
+        if (ch === '(') {
+            tokens.push({ type: 'lparen' });
+            i += 1;
+            continue;
+        }
+        if (ch === ')') {
+            tokens.push({ type: 'rparen' });
+            i += 1;
+            continue;
+        }
+        const op = matchOperatorAt(input, i);
+        if (op) {
+            tokens.push({ type: 'op', value: op });
+            i += op.length;
+            continue;
+        }
+        if (i > 0 && !/[\s(]/.test(input[i - 1])) {
+            i += 1;
+            continue;
+        }
+        const scopeMatch = input.slice(i).match(/^(Any|ECHR|Rechtspraak)\s*:/i);
+        if (scopeMatch) {
+            let j = i + scopeMatch[0].length;
+            let inQuote = false;
+            let depth = 0;
+            for (; j < input.length; j += 1) {
+                const c = input[j];
+                if (c === '"') inQuote = !inQuote;
+                if (inQuote) continue;
+                if (c === '(') {
+                    depth += 1;
+                    continue;
+                }
+                if (c === ')') {
+                    if (depth === 0) break;
+                    depth -= 1;
+                    continue;
+                }
+                if (depth === 0) {
+                    const opAt = matchOperatorAt(input, j);
+                    if (opAt) break;
+                }
+            }
+            const ruleText = input.slice(i, j).trim();
+            tokens.push({ type: 'rule', text: ruleText });
+            i = j;
+            continue;
+        }
+        i += 1;
+    }
+    return tokens;
+}
+
+function parsePreviewTokens(tokens: PreviewToken[], startIndex = 0): { group: QueryBuilderGroup | null; index: number } {
+    const terms: Array<QueryBuilderRule | QueryBuilderGroup> = [];
+    const ops: Array<'AND' | 'OR' | 'NOT'> = [];
+    let i = startIndex;
+
+    while (i < tokens.length) {
+        const token = tokens[i];
+        if (token.type === 'rparen') break;
+        if (token.type === 'op') {
+            ops.push(token.value);
+            i += 1;
+            continue;
+        }
+        if (token.type === 'lparen') {
+            const inner = parsePreviewTokens(tokens, i + 1);
+            if (!inner.group) return { group: null, index: tokens.length };
+            terms.push(inner.group);
+            i = inner.index + 1;
+            continue;
+        }
+        if (token.type === 'rule') {
+            const rule = parsePreviewRuleText(token.text);
+            if (!rule) return { group: null, index: tokens.length };
+            terms.push(rule);
+            i += 1;
+            continue;
+        }
+        i += 1;
+    }
+
+    if (terms.length === 0) return { group: null, index: i };
+
+    let op: 'AND' | 'OR' | 'NOT' = 'AND';
+    if (ops.length > 0) {
+        const unique = Array.from(new Set(ops));
+        op = unique.length === 1 ? unique[0] : 'AND';
+    }
+
+    const group: QueryBuilderGroup = {
+        id: genId(),
+        operator: op,
+        rules: [],
+        groups: []
+    };
+    for (const term of terms) {
+        if ('field' in term) group.rules.push(term);
+        else group.groups.push({ ...term, groups: [] });
+    }
+    return { group, index: i };
+}
+
+function parsePreviewStringToQueryBuilderGroup(input: string): QueryBuilderGroup | null {
+    if (!PREVIEW_SCOPE_LABEL_RE.test(input)) return null;
+    const tokens = tokenizePreview(input);
+    if (tokens.length === 0) return null;
+    const parsed = parsePreviewTokens(tokens, 0);
+    if (!parsed.group) return null;
+    return {
+        ...parsed.group,
+        groups: parsed.group.groups.map((g) => ({ ...g, groups: [] }))
+    };
 }
 
 function applyScope(rule: QueryBuilderRule, scope: SourceScope | null): QueryBuilderRule {
@@ -166,10 +386,11 @@ function parseSuggestionsToRules(suggestions: ParseSuggestion[]): PositionedRule
 }
 
 function parseGroupFromText(input: string): QueryBuilderGroup {
-    const result = parseSearchInput(input);
+    const maskedInput = maskScopeLabels(input);
+    const result = parseSearchInput(maskedInput);
     const rules = parseSuggestionsToRules(result.suggestions);
-    const consumed = rules.map((r) => [r.start, r.end] as [number, number]);
-    const remaining = removeSpans(input, consumed);
+    const suggestionSpans = result.suggestions.map((s) => [s.triggerStart, s.triggerEnd] as [number, number]);
+    const remaining = removeSpans(input, suggestionSpans);
 
     const terms: Term[] = [];
     let prevEnd = 0;
@@ -249,6 +470,10 @@ function parseGroupFromText(input: string): QueryBuilderGroup {
 }
 
 export function parseNaturalLanguageToQueryBuilderGroup(input: string): QueryBuilderGroup {
+    const previewGroup = parsePreviewStringToQueryBuilderGroup(input);
+    if (previewGroup) {
+        return previewGroup;
+    }
     const trimmed = input.trim();
     if (!trimmed) {
         return {
@@ -266,7 +491,8 @@ export function parseNaturalLanguageToQueryBuilderGroup(input: string): QueryBui
         return { group, start, end };
     });
 
-    const result = parseSearchInput(input);
+    const maskedInput = maskScopeLabels(input);
+    const result = parseSearchInput(maskedInput);
     const suggestions = result.suggestions.filter((s) => !withinRange(parenRanges, s.triggerStart, s.triggerEnd));
     const positionedRules = parseSuggestionsToRules(suggestions);
 
@@ -280,7 +506,7 @@ export function parseNaturalLanguageToQueryBuilderGroup(input: string): QueryBui
     terms.sort((a, b) => a.start - b.start);
 
     const spans: [number, number][] = [
-        ...positionedRules.map((r) => [r.start, r.end] as [number, number]),
+        ...suggestions.map((s) => [s.triggerStart, s.triggerEnd] as [number, number]),
         ...parenRanges
     ];
 
@@ -313,6 +539,9 @@ export function parseNaturalLanguageToQueryBuilderGroup(input: string): QueryBui
         if (term.kind === 'rule' && term.rule) {
             const scopedRule = applyScope(term.rule, scopes[i] || null);
             const scopeFromRule = scopeFromSourceRule(scopedRule);
+            if (scopes[i] === 'ANY') {
+                activeScope = null;
+            }
             if (scopeFromRule) {
                 activeScope = scopeFromRule;
             }

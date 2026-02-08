@@ -7,6 +7,7 @@ import {
 	watch,
 	nextTick,
 } from "vue";
+import { onBeforeRouteLeave } from "vue-router";
 import {
 	Loader2,
 	AlertCircle,
@@ -44,11 +45,17 @@ import { parseNaturalLanguageToQueryBuilderGroup } from "~/lib/parser/nl-query-p
 import {
 	ECHR_ARTICLES,
 	RECHTSPRAAK_DOMAINS,
+	RECHTSPRAAK_DOMAIN_ALIASES,
 	RECHTSPRAAK_INSTANCES,
 	RESPONDENT_STATE_CODES,
 } from "~/lib/utils/constants";
 import { toast } from "vue-sonner";
-import { defaultScopeForField, isFieldAllowed } from "~/lib/utils/query-builder-config";
+import {
+	defaultScopeForField,
+	isFieldAllowed,
+	QUERY_BUILDER_FIELDS_BY_SCOPE,
+	QUERY_BUILDER_OPERATORS,
+} from "~/lib/utils/query-builder-config";
 import type { SourceScope } from "~/lib/types";
 
 const route = useRoute();
@@ -68,7 +75,11 @@ const summaryText = computed(() =>
 	summarySegments.value.map((seg) => seg.text).join(""),
 );
 const summarySegments = computed(() =>
-	buildQuerySummarySegments(smartSearch.queryBuilderGroup.value),
+	buildQuerySummarySegments(smartSearch.queryBuilderGroup.value, {
+		degreesSource: smartSearch.degreesSource.value,
+		degreesTarget: smartSearch.degreesTarget.value,
+		isSubgraph: smartSearch.isSubgraph.value,
+	}),
 );
 const marqueeRef = ref<HTMLElement | null>(null);
 const summaryRowRef = ref<HTMLElement | null>(null);
@@ -77,6 +88,89 @@ const isEditingSummary = ref(false);
 const invalidRuleKeys = ref<Set<string>>(new Set());
 const filterState = ref<Partial<SearchQuery>>({});
 let marqueeObserver: ResizeObserver | null = null;
+const SCOPE_LABELS: Record<SourceScope, string> = {
+	ANY: "Any",
+	ECHR: "ECHR",
+	RS: "Rechtspraak",
+};
+
+function getRuleScope(rule: QueryBuilderGroup["rules"][number]): SourceScope {
+	const raw = (rule.sourceScope || defaultScopeForField(rule.field)) as SourceScope;
+	return isFieldAllowed(raw, rule.field)
+		? raw
+		: defaultScopeForField(rule.field);
+}
+
+function buildAppliedSignature(
+	group: QueryBuilderGroup,
+	meta: { degreesSource: number; degreesTarget: number; isSubgraph: boolean },
+) {
+	return JSON.stringify({
+		group,
+		meta,
+	});
+}
+
+function getFieldLabel(field: string, scope: SourceScope): string {
+	const list = QUERY_BUILDER_FIELDS_BY_SCOPE[scope] || QUERY_BUILDER_FIELDS_BY_SCOPE.ANY;
+	return list.find((f) => f.value === field)?.label || field;
+}
+
+function getOperatorLabel(field: string, op: string): string {
+	return QUERY_BUILDER_OPERATORS[field]?.find((o) => o.value === op)?.label || op;
+}
+
+function formatRule(rule: QueryBuilderGroup["rules"][number]): string {
+	const scope = getRuleScope(rule);
+	const scopeLabel = SCOPE_LABELS[scope] || "Any";
+	const fieldLabel = getFieldLabel(rule.field, scope);
+	const opLabel = getOperatorLabel(rule.field, rule.operator);
+	const shouldQuote =
+		rule.operator === "contains" ||
+		rule.operator === "not_contains" ||
+		rule.field === "keywords";
+	const valueText = shouldQuote ? `"${rule.value}"` : rule.value;
+	return `${scopeLabel}: ${fieldLabel} ${opLabel} ${valueText}`;
+}
+
+const scopeConflictDetails = computed(() => {
+	const error = store.error.value;
+	if (!error) return null;
+	if (!error.includes("No applicable rules for RS or ECHR after scope filtering")) {
+		return null;
+	}
+	const rules = [
+		...smartSearch.queryBuilderGroup.value.rules,
+		...smartSearch.queryBuilderGroup.value.groups.flatMap((g) => g.rules),
+	].filter((rule) => rule.value && rule.value.trim());
+	const echrRules: QueryBuilderGroup["rules"][number][] = [];
+	const rsRules: QueryBuilderGroup["rules"][number][] = [];
+	const commonRules: QueryBuilderGroup["rules"][number][] = [];
+
+	for (const rule of rules) {
+		const scope = getRuleScope(rule);
+		if (scope === "ECHR") echrRules.push(rule);
+		else if (scope === "RS") rsRules.push(rule);
+		else commonRules.push(rule);
+	}
+	if (!echrRules.length || !rsRules.length) return null;
+
+	const renderGroup = (items: QueryBuilderGroup["rules"][number][]) =>
+		items.length > 1
+			? `(${items.map(formatRule).join(" AND ")})`
+			: items.map(formatRule).join(" AND ");
+	const orGroup = `${renderGroup(echrRules)} OR ${renderGroup(rsRules)}`;
+	const fix = commonRules.length
+		? `(${orGroup}) AND ${commonRules.map(formatRule).join(" AND ")}`
+		: `(${orGroup})`;
+
+	return {
+		echrRules: echrRules.map(formatRule),
+		rsRules: rsRules.map(formatRule),
+		commonRules: commonRules.map(formatRule),
+		fix,
+	};
+});
 const ruleIndex = computed(() => {
 	const map = new Map<string, QueryBuilderGroup["rules"][number]>();
 	const add = (group: QueryBuilderGroup) => {
@@ -89,11 +183,7 @@ const ruleIndex = computed(() => {
 const filterQuery = computed(() =>
 	applyFilterState(createDefaultSearchQuery(), filterState.value),
 );
-const CLIENT_ONLY_FIELDS = new Set([
-	"article_violated",
-	"article_applied",
-	"article_non_violated",
-]);
+const CLIENT_ONLY_FIELDS = new Set<string>();
 const clientFilterActive = computed(() => {
 	if (
 		filterState.value.articleViolated?.length ||
@@ -132,6 +222,12 @@ function normalizeSummaryValue(value: string): string {
 
 const ARTICLE_SET = new Set(ECHR_ARTICLES.map((a) => a.number.toUpperCase()));
 const DOMAIN_SET = new Set(RECHTSPRAAK_DOMAINS.map((d) => d.toLowerCase()));
+const DOMAIN_ALIAS_MAP = new Map(
+	RECHTSPRAAK_DOMAIN_ALIASES.map((entry) => [
+		entry.pattern.toLowerCase(),
+		entry.value,
+	]),
+);
 const INSTANCE_SET = new Set(RECHTSPRAAK_INSTANCES.map((i) => i.toLowerCase()));
 const STATE_NAME_SET = new Set(Object.keys(RESPONDENT_STATE_CODES).map((n) => n.toLowerCase()));
 const STATE_CODE_MAP = new Map(
@@ -148,6 +244,8 @@ const DOC_TYPES_ECHR = new Set([
 	"HECINF",
 ]);
 const DOC_TYPES_RS = new Set(["DEC", "OPI"]);
+const ISO3_RE = /^[A-Z]{3}$/;
+const SELECTED_LAW_RE = /^BWBX\d+\|\d+$/i;
 const SOURCE_VALUES = new Set([
 	"RS",
 	"RECHTSPRAAK",
@@ -157,11 +255,6 @@ const SOURCE_VALUES = new Set([
 	"BOTH",
 	"ALL",
 ]);
-const SCOPE_LABELS: Record<SourceScope, string> = {
-	ANY: "Any",
-	ECHR: "ECHR",
-	RS: "Rechtspraak",
-};
 const FILTER_KEYS: (keyof SearchQuery)[] = [
 	"sources",
 	"articleViolated",
@@ -298,6 +391,10 @@ function invalidKey(ruleId: string, editType: "scope" | "value") {
 	return `${ruleId}:${editType}`;
 }
 
+function invalidMetaKey(metaKey: string) {
+	return `meta:${metaKey}`;
+}
+
 function setInvalid(
 	ruleId: string,
 	editType: "scope" | "value",
@@ -305,6 +402,17 @@ function setInvalid(
 ) {
 	const next = new Set(invalidRuleKeys.value);
 	const key = invalidKey(ruleId, editType);
+	if (message) {
+		next.add(key);
+	} else {
+		next.delete(key);
+	}
+	invalidRuleKeys.value = next;
+}
+
+function setInvalidMeta(metaKey: string, message: string | null) {
+	const next = new Set(invalidRuleKeys.value);
+	const key = invalidMetaKey(metaKey);
 	if (message) {
 		next.add(key);
 	} else {
@@ -354,6 +462,24 @@ function validateRuleValue(
 	}
 
 	switch (rule.field) {
+		case "dateStart":
+		case "dateEnd":
+		case "date_judgment_start":
+		case "date_judgment_end":
+		case "date_decision_start":
+		case "date_decision_end": {
+			if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+				return { valid: false, message: "Date must be YYYY-MM-DD." };
+			}
+			const parsed = new Date(trimmed);
+			if (Number.isNaN(parsed.getTime())) {
+				return { valid: false, message: "Invalid date format." };
+			}
+			if (parsed > new Date()) {
+				return { valid: false, message: "Date must not be in the future." };
+			}
+			return { valid: true, normalized: trimmed };
+		}
 		case "year": {
 			if (!/^\d{4}$/.test(trimmed)) {
 				return { valid: false, message: "Year must be a 4-digit value." };
@@ -422,7 +548,11 @@ function validateRuleValue(
 		case "domain": {
 			const normalized = trimmed.toLowerCase();
 			if (!DOMAIN_SET.has(normalized)) {
-				return { valid: false, message: "Unknown legal domain." };
+				const alias = DOMAIN_ALIAS_MAP.get(normalized);
+				if (!alias) {
+					return { valid: false, message: "Unknown legal domain." };
+				}
+				return { valid: true, normalized: alias };
 			}
 			const proper =
 				RECHTSPRAAK_DOMAINS.find((item) => item.toLowerCase() === normalized) ||
@@ -434,6 +564,22 @@ function validateRuleValue(
 				return { valid: false, message: "Application number must look like 12345/67." };
 			}
 			return { valid: true, normalized: trimmed };
+		}
+		case "language": {
+			const code = trimmed.toUpperCase();
+			if (!ISO3_RE.test(code)) {
+				return { valid: false, message: "Language must be an ISO-3 code." };
+			}
+			return { valid: true, normalized: code };
+		}
+		case "selectedLaws": {
+			if (!SELECTED_LAW_RE.test(trimmed)) {
+				return {
+					valid: false,
+					message: "Selected laws must look like BWBX1234|56.",
+				};
+			}
+			return { valid: true, normalized: trimmed.toUpperCase() };
 		}
 		case "ecli": {
 			if (!/^ECLI:[A-Z]{2}:[A-Z0-9]{2,}:.+$/i.test(trimmed)) {
@@ -453,6 +599,100 @@ function validateRuleValue(
 	}
 }
 
+function validateMetaValue(
+	metaKey: string,
+	value: string,
+): { valid: boolean; normalized?: string; message?: string } {
+	const normalized = normalizeSummaryValue(value);
+	if (metaKey === "degree_source" || metaKey === "degree_target") {
+		const num = Number(normalized);
+		if (!Number.isInteger(num) || num < 0 || num > 5) {
+			return { valid: false, message: "Degree must be an integer between 0 and 5." };
+		}
+		return { valid: true, normalized: String(num) };
+	}
+	if (metaKey === "subgraph") {
+		const lower = normalized.toLowerCase();
+		if (["on", "true", "yes", "1"].includes(lower)) {
+			return { valid: true, normalized: "on" };
+		}
+		if (["off", "false", "no", "0"].includes(lower)) {
+			return { valid: true, normalized: "off" };
+		}
+		return { valid: false, message: 'Use "on" or "off" for subgraph.' };
+	}
+	return { valid: false, message: "Unknown setting." };
+}
+
+function metaDisplayValue(metaKey: string): string {
+	if (metaKey === "degree_source") return String(smartSearch.degreesSource.value);
+	if (metaKey === "degree_target") return String(smartSearch.degreesTarget.value);
+	if (metaKey === "subgraph") return smartSearch.isSubgraph.value ? "on" : "off";
+	return "";
+}
+
+function parseDateValue(value: string): number | null {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+}
+
+function validateDateRanges(
+	group: QueryBuilderGroup,
+): { valid: true } | { valid: false; message: string; ruleIds: string[] } {
+	const buckets = new Map<
+		string,
+		{
+			start?: number;
+			end?: number;
+			ruleIds: string[];
+		}
+	>();
+	const allRules = [...group.rules, ...group.groups.flatMap((sub) => sub.rules)];
+
+	const consume = (rule: QueryBuilderGroup["rules"][number]) => {
+		const time = parseDateValue(rule.value);
+		if (time === null) return;
+		const scope = rule.sourceScope || "ANY";
+		const key = `${scope}:${rule.field}`;
+		const bucket = buckets.get(key) || { ruleIds: [] };
+		bucket.ruleIds.push(rule.id);
+		if (rule.field.endsWith("_end") || rule.field === "dateEnd") {
+			bucket.end = bucket.end === undefined ? time : Math.min(bucket.end, time);
+		} else {
+			bucket.start = bucket.start === undefined ? time : Math.max(bucket.start, time);
+		}
+		buckets.set(key, bucket);
+	};
+
+	for (const rule of allRules) {
+		if (
+			![
+				"dateStart",
+				"dateEnd",
+				"date_judgment_start",
+				"date_judgment_end",
+				"date_decision_start",
+				"date_decision_end",
+			].includes(rule.field)
+		) {
+			continue;
+		}
+		consume(rule);
+	}
+
+	for (const bucket of buckets.values()) {
+		if (bucket.start !== undefined && bucket.end !== undefined && bucket.start > bucket.end) {
+			return {
+				valid: false,
+				message: "Date start cannot be after date end.",
+				ruleIds: bucket.ruleIds,
+			};
+		}
+	}
+
+	return { valid: true };
+}
 function validateYearRanges(
 	group: QueryBuilderGroup,
 ): { valid: true } | { valid: false; message: string; ruleIds: string[] } {
@@ -531,7 +771,9 @@ function validateYearRanges(
 function applySummaryEdits() {
 	if (!summaryRowRef.value) return;
 	const nodes = Array.from(
-		summaryRowRef.value.querySelectorAll<HTMLElement>("[data-rule-id]"),
+		summaryRowRef.value.querySelectorAll<HTMLElement>(
+			"[data-rule-id], [data-meta-key]",
+		),
 	);
 	if (nodes.length === 0) return;
 
@@ -540,9 +782,33 @@ function applySummaryEdits() {
 	const scopeLabels = new Map<string, string>();
 	const revertScopeTargets = new Map<string, string>();
 	const revertValueTargets = new Map<string, string>();
+	const revertMetaTargets = new Map<string, string>();
+	const metaEdits: {
+		degreesSource?: number;
+		degreesTarget?: number;
+		isSubgraph?: boolean;
+	} = {};
 	const errors: string[] = [];
 	const editedRuleIds = new Set<string>();
 	for (const node of nodes) {
+		const metaKey = node.dataset.metaKey;
+		if (metaKey) {
+			const rawValue = node.textContent || "";
+			const result = validateMetaValue(metaKey, rawValue);
+			if (!result.valid) {
+				revertMetaTargets.set(metaKey, metaDisplayValue(metaKey));
+				setInvalidMeta(metaKey, result.message || "Invalid value.");
+				if (result.message) errors.push(result.message);
+				continue;
+			}
+			setInvalidMeta(metaKey, null);
+			const normalized = result.normalized ?? normalizeSummaryValue(rawValue);
+			node.textContent = normalized;
+			if (metaKey === "degree_source") metaEdits.degreesSource = Number(normalized);
+			if (metaKey === "degree_target") metaEdits.degreesTarget = Number(normalized);
+			if (metaKey === "subgraph") metaEdits.isSubgraph = normalized === "on";
+			continue;
+		}
 		const ruleId = node.dataset.ruleId;
 		if (!ruleId) continue;
 		const rule = ruleIndex.value.get(ruleId);
@@ -583,9 +849,21 @@ function applySummaryEdits() {
 		editedRuleIds.add(ruleId);
 	}
 
-	if (revertScopeTargets.size > 0 || revertValueTargets.size > 0) {
+	if (
+		revertScopeTargets.size > 0 ||
+		revertValueTargets.size > 0 ||
+		revertMetaTargets.size > 0
+	) {
 		for (const node of nodes) {
 			const ruleId = node.dataset.ruleId;
+			const metaKey = node.dataset.metaKey;
+			if (metaKey) {
+				const revertValue = revertMetaTargets.get(metaKey);
+				if (revertValue !== undefined) {
+					node.textContent = revertValue;
+				}
+				continue;
+			}
 			if (!ruleId) continue;
 			const editType = node.dataset.edit;
 			if (editType === "scope") {
@@ -632,7 +910,11 @@ function applySummaryEdits() {
 		})),
 	};
 
-	if (!changed) return;
+	const metaChanged =
+		metaEdits.degreesSource !== undefined ||
+		metaEdits.degreesTarget !== undefined ||
+		metaEdits.isSubgraph !== undefined;
+	if (!changed && !metaChanged) return;
 
 	for (const rule of [
 		...nextGroup.rules,
@@ -689,6 +971,42 @@ function applySummaryEdits() {
 		invalidRuleKeys.value = new Set();
 		return;
 	}
+	const dateValidation = validateDateRanges(nextGroup);
+	if (!dateValidation.valid) {
+		for (const ruleId of dateValidation.ruleIds) {
+			setInvalid(ruleId, "value", dateValidation.message);
+		}
+		for (const node of nodes) {
+			const ruleId = node.dataset.ruleId;
+			if (!ruleId) continue;
+			if (node.dataset.edit !== "value") continue;
+			const rule = ruleIndex.value.get(ruleId);
+			if (rule) node.textContent = rule.value;
+		}
+		showValidationNotice(dateValidation.message);
+		invalidRuleKeys.value = new Set();
+		return;
+	}
+
+	if (metaChanged) {
+		smartSearch.setDegrees(
+			{
+				source:
+					metaEdits.degreesSource !== undefined
+						? metaEdits.degreesSource
+						: smartSearch.degreesSource.value,
+				target:
+					metaEdits.degreesTarget !== undefined
+						? metaEdits.degreesTarget
+						: smartSearch.degreesTarget.value,
+				isSubgraph:
+					metaEdits.isSubgraph !== undefined
+						? metaEdits.isSubgraph
+						: smartSearch.isSubgraph.value,
+			},
+			"querybuilder",
+		);
+	}
 
 	smartSearch.onQueryBuilderEdit(nextGroup);
 	applyQueryBuilderEdits();
@@ -708,6 +1026,17 @@ function handleSummaryFocusOut() {
 
 function handleSummaryInput(event: Event) {
 	const target = event.currentTarget as HTMLElement | null;
+	const metaKey = target?.dataset.metaKey;
+	if (metaKey) {
+		const rawValue = target?.textContent || "";
+		const result = validateMetaValue(metaKey, rawValue);
+		if (!result.valid) {
+			setInvalidMeta(metaKey, result.message || "Invalid value.");
+		} else {
+			setInvalidMeta(metaKey, null);
+		}
+		return;
+	}
 	const ruleId = target?.dataset.ruleId;
 	if (!ruleId) return;
 	const rule = ruleIndex.value.get(ruleId);
@@ -759,12 +1088,14 @@ function applyQueryAndSearch(
 	});
 	store.search();
 	if (baseGroup) {
-		lastAppliedSignature.value = JSON.stringify(baseGroup);
+		lastAppliedSignature.value = buildAppliedSignature(baseGroup, {
+			degreesSource: query.degreesSource,
+			degreesTarget: query.degreesTarget,
+			isSubgraph: query.isSubgraph,
+		});
 	}
 	if (updateUrl) {
-		const includeSearchString =
-			smartSearch.lastEditSource.value === "searchbar" &&
-			!!smartSearch.searchString.value;
+		const includeSearchString = !!smartSearch.searchString.value;
 		const params = queryBuilderGroupToParams(
 			baseGroup,
 			{
@@ -776,6 +1107,9 @@ function applyQueryAndSearch(
 				sortBy: query.sortBy,
 				sortDirection: query.sortDirection,
 				page: query.page,
+				degreesSource: query.degreesSource,
+				degreesTarget: query.degreesTarget,
+				isSubgraph: query.isSubgraph,
 			},
 		);
 		appendFilterParams(params, filterState.value);
@@ -793,12 +1127,21 @@ function applyQueryAndSearch(
 
 function applyQueryBuilderEdits() {
 	const group = smartSearch.queryBuilderGroup.value;
-	const signature = JSON.stringify(group);
+	const signature = buildAppliedSignature(group, {
+		degreesSource: smartSearch.degreesSource.value,
+		degreesTarget: smartSearch.degreesTarget.value,
+		isSubgraph: smartSearch.isSubgraph.value,
+	});
 	if (signature === lastAppliedSignature.value) return;
 
 	const rangeValidation = validateYearRanges(group);
 	if (!rangeValidation.valid) {
 		showValidationNotice(rangeValidation.message);
+		return;
+	}
+	const dateValidation = validateDateRanges(group);
+	if (!dateValidation.valid) {
+		showValidationNotice(dateValidation.message);
 		return;
 	}
 
@@ -814,6 +1157,9 @@ function applyQueryBuilderEdits() {
 		sortBy: store.query.value.sortBy,
 		sortDirection: store.query.value.sortDirection,
 		pageSize: store.query.value.pageSize,
+		degreesSource: smartSearch.degreesSource.value,
+		degreesTarget: smartSearch.degreesTarget.value,
+		isSubgraph: smartSearch.isSubgraph.value,
 		page: 1,
 		cursor: undefined,
 	};
@@ -839,6 +1185,9 @@ function handleClear() {
 	routeError.value = null;
 	store.resetQuery();
 	smartSearch.clearAll();
+	smartSearch.setFromText("");
+	smartSearch.setSearchString("");
+	smartSearch.lastEditSource.value = "searchbar";
 	filterState.value = {};
 	lastAppliedSignature.value = "";
 	syncingRoute.value = true;
@@ -892,11 +1241,19 @@ function applyRouteQuery() {
 				page: 1,
 				sortBy: searchResult.query.sortBy,
 				sortDirection: searchResult.query.sortDirection,
+				degreesSource: searchResult.query.degreesSource,
+				degreesTarget: searchResult.query.degreesTarget,
+				isSubgraph: searchResult.query.isSubgraph,
 			};
 			routeError.value = null;
 			syncingSmartSearch.value = true;
 			smartSearch.setSearchString(searchString);
 			smartSearch.queryBuilderGroup.value = group;
+			smartSearch.setDegrees({
+				source: nextQuery.degreesSource,
+				target: nextQuery.degreesTarget,
+				isSubgraph: nextQuery.isSubgraph,
+			});
 			smartSearch.lastEditSource.value = "searchbar";
 			nextTick(() => {
 				syncingSmartSearch.value = false;
@@ -937,6 +1294,18 @@ function applyRouteQuery() {
 		page: parsed.state.page || 1,
 		sortBy: parsed.state.sortBy || mergedQuery.sortBy,
 		sortDirection: parsed.state.sortDirection || mergedQuery.sortDirection,
+		degreesSource:
+			parsed.state.degreesSource !== undefined
+				? parsed.state.degreesSource
+				: mergedQuery.degreesSource,
+		degreesTarget:
+			parsed.state.degreesTarget !== undefined
+				? parsed.state.degreesTarget
+				: mergedQuery.degreesTarget,
+		isSubgraph:
+			parsed.state.isSubgraph !== undefined
+				? parsed.state.isSubgraph
+				: mergedQuery.isSubgraph,
 	};
 
 	if (!filterError) {
@@ -946,10 +1315,20 @@ function applyRouteQuery() {
 	if (parsed.state.searchString) {
 		smartSearch.setSearchString(parsed.state.searchString);
 		smartSearch.queryBuilderGroup.value = group;
+		smartSearch.setDegrees({
+			source: nextQuery.degreesSource,
+			target: nextQuery.degreesTarget,
+			isSubgraph: nextQuery.isSubgraph,
+		});
 		smartSearch.lastEditSource.value = "searchbar";
 	} else {
 		smartSearch.setSearchString("");
 		smartSearch.onQueryBuilderEdit(group);
+		smartSearch.setDegrees({
+			source: nextQuery.degreesSource,
+			target: nextQuery.degreesTarget,
+			isSubgraph: nextQuery.isSubgraph,
+		});
 	}
 	nextTick(() => {
 		syncingSmartSearch.value = false;
@@ -960,7 +1339,11 @@ function applyRouteQuery() {
 		baseGroup: group,
 		requestGroup,
 	});
-	lastAppliedSignature.value = JSON.stringify(group);
+	lastAppliedSignature.value = buildAppliedSignature(group, {
+		degreesSource: nextQuery.degreesSource,
+		degreesTarget: nextQuery.degreesTarget,
+		isSubgraph: nextQuery.isSubgraph,
+	});
 }
 
 onMounted(() => {
@@ -970,6 +1353,10 @@ onMounted(() => {
 		marqueeObserver = new ResizeObserver(() => updateMarquee());
 		if (marqueeRef.value) marqueeObserver.observe(marqueeRef.value);
 	}
+});
+
+onBeforeRouteLeave(() => {
+	store.abortAll();
 });
 
 watch(
@@ -1015,6 +1402,9 @@ function handleSubmit() {
 		sortBy: store.query.value.sortBy,
 		sortDirection: store.query.value.sortDirection,
 		pageSize: store.query.value.pageSize,
+		degreesSource: smartSearch.degreesSource.value,
+		degreesTarget: smartSearch.degreesTarget.value,
+		isSubgraph: smartSearch.isSubgraph.value,
 		page: 1,
 		cursor: undefined,
 	};
@@ -1037,15 +1427,24 @@ function handleSubmit() {
 }
 
 function handleEditSearch() {
-	const includeSearchString =
+	store.abortAll();
+	if (
+		!smartSearch.searchString.value &&
 		smartSearch.lastEditSource.value === "searchbar" &&
-		!!smartSearch.searchString.value;
+		smartSearch.rawText.value.trim()
+	) {
+		smartSearch.setSearchString(smartSearch.rawText.value);
+	}
+	const includeSearchString = !!smartSearch.searchString.value;
 	const params = queryBuilderGroupToParams(
 		smartSearch.queryBuilderGroup.value,
 		{
 			searchString: includeSearchString
 				? smartSearch.searchString.value
 				: undefined,
+			degreesSource: store.query.value.degreesSource,
+			degreesTarget: store.query.value.degreesTarget,
+			isSubgraph: store.query.value.isSubgraph,
 		},
 	);
 	router.push({ path: "/", query: Object.fromEntries(params.entries()) });
@@ -1177,6 +1576,27 @@ function handleFindSimilar(citation: Citation) {
 														{{ segment.text }}
 													</span>
 													<span
+														v-else-if="segment.type === 'meta'"
+														:class="[
+															'query-value',
+															invalidRuleKeys.has(
+																`meta:${segment.metaKey}`,
+															)
+																? 'query-value-invalid'
+																: '',
+														]"
+														contenteditable="true"
+														spellcheck="false"
+														:data-meta-key="segment.metaKey"
+														data-edit="meta"
+														@input="handleSummaryInput"
+														@keyup="handleSummaryInput"
+														@paste="handleSummaryInput"
+														@keydown.enter="handleSummaryEnter"
+													>
+														{{ segment.text }}
+													</span>
+													<span
 														v-else
 														:class="[
 															'query-value',
@@ -1279,10 +1699,32 @@ function handleFindSimilar(citation: Citation) {
 							v-else-if="store.error.value"
 							class="flex flex-1 items-center justify-center"
 						>
-							<div class="text-center space-y-3 max-w-md">
+							<div class="text-center space-y-3 max-w-lg">
 								<AlertCircle class="h-8 w-8 text-red-500 mx-auto" />
 								<p class="text-sm font-medium text-foreground">Search failed</p>
-								<p class="text-xs text-muted-foreground">
+								<template v-if="scopeConflictDetails">
+									<p class="text-xs text-muted-foreground">
+										This query combines ECHR-only and Rechtspraak-only rules with
+										<span class="font-semibold text-foreground">AND</span>, so no dataset can satisfy all conditions.
+									</p>
+									<div class="text-xs text-muted-foreground space-y-1">
+										<p class="font-semibold text-foreground/80">ECHR-only rules</p>
+										<p>{{ scopeConflictDetails.echrRules.join(" AND ") }}</p>
+									</div>
+									<div class="text-xs text-muted-foreground space-y-1">
+										<p class="font-semibold text-foreground/80">Rechtspraak-only rules</p>
+										<p>{{ scopeConflictDetails.rsRules.join(" AND ") }}</p>
+									</div>
+									<div v-if="scopeConflictDetails.commonRules.length" class="text-xs text-muted-foreground space-y-1">
+										<p class="font-semibold text-foreground/80">Common rules</p>
+										<p>{{ scopeConflictDetails.commonRules.join(" AND ") }}</p>
+									</div>
+									<div class="rounded-lg border border-border/50 bg-card/60 p-3 text-xs text-muted-foreground">
+										<p class="font-semibold text-foreground/80 mb-1">Suggested fix</p>
+										<p>{{ scopeConflictDetails.fix }}</p>
+									</div>
+								</template>
+								<p v-else class="text-xs text-muted-foreground">
 									{{ store.error.value }}
 								</p>
 								<Button variant="outline" size="sm" @click="store.search()">

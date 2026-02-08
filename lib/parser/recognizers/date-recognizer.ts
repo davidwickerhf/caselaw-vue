@@ -66,6 +66,17 @@ export function recognizeDates(input: string): DateRecognizerResult {
         return `${day} ${monthName} ${year}`;
     };
 
+    const toIsoDate = (day: string, month: string, year: string): string | null => {
+        const monthKey = month.toLowerCase();
+        const monthNum = monthMap[monthKey];
+        if (!monthNum) return null;
+        const dayNum = Number(day);
+        if (!Number.isInteger(dayNum) || dayNum < 1 || dayNum > 31) return null;
+        const mm = String(monthNum).padStart(2, '0');
+        const dd = String(dayNum).padStart(2, '0');
+        return `${year}-${mm}-${dd}`;
+    };
+
     const addSpan = (start: number, end: number) => {
         consumed.push([start, end]);
     };
@@ -142,16 +153,19 @@ export function recognizeDates(input: string): DateRecognizerResult {
         const end = start + match[0].length;
         const startYear = match[3];
         const endYear = match[6];
+        const startIso = toIsoDate(match[1], match[2], startYear);
+        const endIso = toIsoDate(match[4], match[5], endYear);
+        if (!startIso || !endIso) continue;
         const startToken: ParsedToken = {
             id: genId(),
-            type: 'date_start',
-            value: normalizeYear(startYear),
+            type: 'date_start_exact',
+            value: startIso,
             display: `From ${toDisplayDate(match[1], match[2], startYear)}`,
         };
         const endToken: ParsedToken = {
             id: genId(),
-            type: 'date_end',
-            value: normalizeYear(endYear),
+            type: 'date_end_exact',
+            value: endIso,
             display: `To ${toDisplayDate(match[4], match[5], endYear)}`,
         };
         suggestions.push({
@@ -161,7 +175,7 @@ export function recognizeDates(input: string): DateRecognizerResult {
             triggerEnd: end,
             token: startToken,
             tokens: [startToken, endToken],
-            preview: `${startYear}-${endYear}`,
+            preview: `${startIso} to ${endIso}`,
         });
         addSpan(start, end);
     }
@@ -173,16 +187,19 @@ export function recognizeDates(input: string): DateRecognizerResult {
         const end = start + match[0].length;
         const startYear = match[3];
         const endYear = match[6];
+        const startIso = toIsoDate(match[1], match[2], startYear);
+        const endIso = toIsoDate(match[4], match[5], endYear);
+        if (!startIso || !endIso) continue;
         const startToken: ParsedToken = {
             id: genId(),
-            type: 'date_start',
-            value: `${startYear}-01-01`,
+            type: 'date_start_exact',
+            value: startIso,
             display: `From ${toDisplayDate(match[1], match[2], startYear)}`,
         };
         const endToken: ParsedToken = {
             id: genId(),
-            type: 'date_end',
-            value: `${endYear}-12-31`,
+            type: 'date_end_exact',
+            value: endIso,
             display: `To ${toDisplayDate(match[4], match[5], endYear)}`,
         };
         suggestions.push({
@@ -192,7 +209,7 @@ export function recognizeDates(input: string): DateRecognizerResult {
             triggerEnd: end,
             token: startToken,
             tokens: [startToken, endToken],
-            preview: `${startYear}-${endYear}`,
+            preview: `${startIso} to ${endIso}`,
         });
         addSpan(start, end);
     }
@@ -204,14 +221,22 @@ export function recognizeDates(input: string): DateRecognizerResult {
         const end = start + match[0].length;
         if (consumed.some(([cs, ce]) => start >= cs && end <= ce)) continue;
         const year = match[1];
-        const token = makeDateToken(year, `On ${match[0]}`, 'year');
+        const month = String(match[2]).padStart(2, '0');
+        const day = String(match[3]).padStart(2, '0');
+        const iso = `${year}-${month}-${day}`;
+        const token: ParsedToken = {
+            id: genId(),
+            type: 'date_start_exact',
+            value: iso,
+            display: `On ${match[0]}`,
+        };
         suggestions.push({
             id: genId(),
             trigger: input.slice(start, end),
             triggerStart: start,
             triggerEnd: end,
             token,
-            preview: `Year ${year}`,
+            preview: `Date ${iso}`,
         });
         addSpan(start, end);
     }
@@ -222,14 +247,22 @@ export function recognizeDates(input: string): DateRecognizerResult {
         const end = start + match[0].length;
         if (consumed.some(([cs, ce]) => start >= cs && end <= ce)) continue;
         const year = match[3];
-        const token = makeDateToken(year, `On ${match[0]}`, 'year');
+        const month = String(match[2]).padStart(2, '0');
+        const day = String(match[1]).padStart(2, '0');
+        const iso = `${year}-${month}-${day}`;
+        const token: ParsedToken = {
+            id: genId(),
+            type: 'date_start_exact',
+            value: iso,
+            display: `On ${match[0]}`,
+        };
         suggestions.push({
             id: genId(),
             trigger: input.slice(start, end),
             triggerStart: start,
             triggerEnd: end,
             token,
-            preview: `Year ${year}`,
+            preview: `Date ${iso}`,
         });
         addSpan(start, end);
     }
@@ -241,16 +274,21 @@ export function recognizeDates(input: string): DateRecognizerResult {
         const end = start + match[0].length;
         if (consumed.some(([cs, ce]) => start >= cs && end <= ce)) continue;
         const year = match[3];
-        const monthKey = match[2].toLowerCase();
-        if (!monthMap[monthKey]) continue;
-        const token = makeDateToken(year, `On ${toDisplayDate(match[1], match[2], year)}`, 'year');
+        const iso = toIsoDate(match[1], match[2], year);
+        if (!iso) continue;
+        const token: ParsedToken = {
+            id: genId(),
+            type: 'date_start_exact',
+            value: iso,
+            display: `On ${toDisplayDate(match[1], match[2], year)}`,
+        };
         suggestions.push({
             id: genId(),
             trigger: input.slice(start, end),
             triggerStart: start,
             triggerEnd: end,
             token,
-            preview: `Year ${year}`,
+            preview: `Date ${iso}`,
         });
         addSpan(start, end);
     }
@@ -261,16 +299,21 @@ export function recognizeDates(input: string): DateRecognizerResult {
         const end = start + match[0].length;
         if (consumed.some(([cs, ce]) => start >= cs && end <= ce)) continue;
         const year = match[3];
-        const monthKey = match[1].toLowerCase();
-        if (!monthMap[monthKey]) continue;
-        const token = makeDateToken(year, `On ${toDisplayDate(match[2], match[1], year)}`, 'year');
+        const iso = toIsoDate(match[2], match[1], year);
+        if (!iso) continue;
+        const token: ParsedToken = {
+            id: genId(),
+            type: 'date_start_exact',
+            value: iso,
+            display: `On ${toDisplayDate(match[2], match[1], year)}`,
+        };
         suggestions.push({
             id: genId(),
             trigger: input.slice(start, end),
             triggerStart: start,
             triggerEnd: end,
             token,
-            preview: `Year ${year}`,
+            preview: `Date ${iso}`,
         });
         addSpan(start, end);
     }

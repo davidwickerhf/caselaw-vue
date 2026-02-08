@@ -402,6 +402,36 @@ export const RECHTSPRAAK_DOMAINS: string[] = [
     'Mededingingsrecht'
 ];
 
+export const RECHTSPRAAK_DOMAIN_ALIASES: { pattern: string; value: string }[] = [
+    { pattern: 'administrative law', value: 'Bestuursrecht' },
+    { pattern: 'public law', value: 'Bestuursrecht' },
+    { pattern: 'civil law', value: 'Civiel recht' },
+    { pattern: 'criminal law', value: 'Strafrecht' },
+    { pattern: 'tax law', value: 'Belastingrecht' },
+    { pattern: 'social security law', value: 'Socialezekerheidsrecht' },
+    { pattern: 'immigration law', value: 'Vreemdelingenrecht' },
+    { pattern: 'aliens law', value: 'Vreemdelingenrecht' },
+    { pattern: 'civil service law', value: 'Ambtenarenrecht' },
+    { pattern: 'european law', value: 'Europees recht' },
+    { pattern: 'public international law', value: 'Internationaal publiekrecht' },
+    { pattern: 'international public law', value: 'Internationaal publiekrecht' },
+    { pattern: 'insolvency law', value: 'Insolventierecht' },
+    { pattern: 'family law', value: 'Personen- en familierecht' },
+    { pattern: 'persons and family law', value: 'Personen- en familierecht' },
+    { pattern: 'labour law', value: 'Arbeidsrecht' },
+    { pattern: 'employment law', value: 'Arbeidsrecht' },
+    { pattern: 'contract law', value: 'Verbintenissenrecht' },
+    { pattern: 'law of obligations', value: 'Verbintenissenrecht' },
+    { pattern: 'obligations law', value: 'Verbintenissenrecht' },
+    { pattern: 'property law', value: 'Goederenrecht' },
+    { pattern: 'company law', value: 'Ondernemingsrecht' },
+    { pattern: 'corporate law', value: 'Ondernemingsrecht' },
+    { pattern: 'intellectual property', value: 'Intellectueel-eigendomsrecht' },
+    { pattern: 'intellectual property law', value: 'Intellectueel-eigendomsrecht' },
+    { pattern: 'competition law', value: 'Mededingingsrecht' },
+    { pattern: 'antitrust law', value: 'Mededingingsrecht' }
+];
+
 export const IMPORTANCE_LEVELS: { value: number; label: string }[] = [
     { value: 1, label: 'Key case' },
     { value: 2, label: 'Important' },

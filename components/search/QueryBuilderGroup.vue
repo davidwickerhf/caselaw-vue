@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Plus, Trash2, Brackets } from 'lucide-vue-next'
+import { Plus, Trash2, Brackets, AlertCircle } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 import type { QueryBuilderGroup, QueryBuilderRule, SourceScope } from '~/lib/types'
 import {
   QUERY_BUILDER_FIELDS_BY_SCOPE,
@@ -26,12 +27,18 @@ const emit = defineEmits<{
   change: []
 }>()
 
+const prevScopeByRule = new Map<string, SourceScope>()
+
 props.group.rules.forEach((rule) => {
   if (!rule.sourceScope) rule.sourceScope = defaultScopeForField(rule.field)
   if (!isFieldAllowed(rule.sourceScope, rule.field)) {
-    rule.sourceScope = defaultScopeForField(rule.field)
-    rule.field = defaultFieldForScope(rule.sourceScope)
+    const nextScope = defaultScopeForField(rule.field)
+    rule.sourceScope = nextScope
+    if (!isFieldAllowed(nextScope, rule.field)) {
+      rule.field = defaultFieldForScope(nextScope)
+    }
   }
+  prevScopeByRule.set(rule.id, rule.sourceScope as SourceScope)
 })
 
 function genId(): string {
@@ -43,7 +50,9 @@ function newRule(): QueryBuilderRule {
 }
 
 function addRule(group: QueryBuilderGroup) {
-  group.rules.push(newRule())
+  const rule = newRule()
+  group.rules.push(rule)
+  prevScopeByRule.set(rule.id, rule.sourceScope as SourceScope)
   emit('change')
 }
 
@@ -65,6 +74,7 @@ function removeSubGroup(parent: QueryBuilderGroup, groupId: string) {
 function onFieldChange(rule: QueryBuilderRule) {
   const ops = QUERY_BUILDER_OPERATORS[rule.field]
   if (ops && ops.length > 0) rule.operator = ops[0].value
+  enforceAndScopeConsistency(rule.id)
   emit('change')
 }
 
@@ -73,17 +83,77 @@ function onValueChange() {
 }
 
 function onScopeChange(rule: QueryBuilderRule) {
+  const previous = prevScopeByRule.get(rule.id) || defaultScopeForField(rule.field)
   if (!isFieldAllowed(rule.sourceScope, rule.field)) {
     rule.field = defaultFieldForScope(rule.sourceScope)
   }
   const ops = QUERY_BUILDER_OPERATORS[rule.field]
   if (ops && ops.length > 0) rule.operator = ops[0].value
+  if (!enforceAndScopeConsistency(rule.id, previous)) {
+    rule.sourceScope = previous
+    return
+  }
+  prevScopeByRule.set(rule.id, rule.sourceScope)
   emit('change')
 }
 
 function onOperatorChange(group: QueryBuilderGroup, op: string) {
+  const prev = group.operator
   group.operator = op as 'AND' | 'OR' | 'NOT'
+  if (group.operator === 'AND' && hasScopeConflict(group)) {
+    group.operator = prev
+    toast.error('AND groups cannot mix ECHR and Rechtspraak rules. Use OR grouping instead.', { duration: 2400 })
+    return
+  }
   emit('change')
+}
+
+function getRuleScope(rule: QueryBuilderRule): SourceScope {
+  const raw = (rule.sourceScope || defaultScopeForField(rule.field)) as SourceScope
+  return isFieldAllowed(raw, rule.field) ? raw : defaultScopeForField(rule.field)
+}
+
+function getGroupScopes(group: QueryBuilderGroup, excludeRuleId?: string): SourceScope[] {
+  const scopes: SourceScope[] = []
+  for (const rule of group.rules) {
+    if (excludeRuleId && rule.id === excludeRuleId) continue
+    const scope = getRuleScope(rule)
+    if (scope !== 'ANY') scopes.push(scope)
+  }
+  return Array.from(new Set(scopes))
+}
+
+function hasScopeConflict(group: QueryBuilderGroup): boolean {
+  const scopes = getGroupScopes(group)
+  return scopes.length > 1
+}
+
+function enforceAndScopeConsistency(ruleId?: string, previous?: SourceScope): boolean {
+  if (props.group.operator !== 'AND') return true
+  const scopes = getGroupScopes(props.group, ruleId)
+  if (scopes.length > 1) {
+    toast.error('AND groups cannot mix ECHR and Rechtspraak rules. Use OR grouping instead.', { duration: 2400 })
+    return false
+  }
+  const locked = scopes[0]
+  if (!locked) return true
+  const rule = props.group.rules.find((r) => r.id === ruleId)
+  if (!rule) return true
+  const nextScope = getRuleScope(rule)
+  if (nextScope !== 'ANY' && nextScope !== locked) {
+    toast.error('AND groups must use Any or a single dataset scope.', { duration: 2200 })
+    if (previous) rule.sourceScope = previous
+    return false
+  }
+  return true
+}
+
+function scopeOptions(rule: QueryBuilderRule) {
+  if (props.group.operator !== 'AND') return SOURCE_SCOPES
+  const scopes = getGroupScopes(props.group, rule.id)
+  if (scopes.length === 0) return SOURCE_SCOPES
+  const locked = scopes[0]
+  return SOURCE_SCOPES.filter((s) => s.value === 'ANY' || s.value === locked)
 }
 </script>
 
@@ -109,6 +179,13 @@ function onOperatorChange(group: QueryBuilderGroup, op: string) {
       </div>
       <span class="text-[10px] text-muted-foreground/50">of the following</span>
     </div>
+    <div
+      v-if="group.operator === 'AND' && hasScopeConflict(group)"
+      class="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive/80"
+    >
+      <AlertCircle class="h-3.5 w-3.5" />
+      This AND group mixes ECHR and Rechtspraak rules. Use OR grouping to combine datasets.
+    </div>
 
     <!-- Rules -->
     <div class="space-y-2">
@@ -118,7 +195,7 @@ function onOperatorChange(group: QueryBuilderGroup, op: string) {
           class="h-8 rounded-lg border border-border/50 bg-background px-2 text-[11px] font-semibold uppercase tracking-wide text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
           @change="onScopeChange(rule)"
         >
-          <option v-for="scope in SOURCE_SCOPES" :key="scope.value" :value="scope.value">{{ scope.label }}</option>
+          <option v-for="scope in scopeOptions(rule)" :key="scope.value" :value="scope.value">{{ scope.label }}</option>
         </select>
         <select
           v-model="rule.field"

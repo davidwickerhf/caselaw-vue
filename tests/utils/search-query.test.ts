@@ -51,4 +51,25 @@ describe('search-query utils', () => {
     expect(result.query?.scoped.echr.applicationNumbers).toContain('12345/67');
     expect(result.query?.dateStart).toBe('2020-01-01');
   });
+
+  it('handles judgment and decision dates', () => {
+    const group = {
+      id: 'g',
+      operator: 'AND' as const,
+      rules: [
+        { id: '1', field: 'date_judgment_start', operator: 'equals', value: '2020-05-01', sourceScope: 'ECHR' as const },
+        { id: '2', field: 'date_decision_end', operator: 'before', value: '2021-06-01', sourceScope: 'ECHR' as const },
+        { id: '3', field: 'language', operator: 'equals', value: 'ENG', sourceScope: 'ECHR' as const },
+        { id: '4', field: 'selectedLaws', operator: 'equals', value: 'BWBX1234|56', sourceScope: 'RS' as const }
+      ],
+      groups: []
+    };
+
+    const result = queryBuilderGroupToSearchQuery(group);
+    expect(result.query?.scoped.echr.dateJudgmentStart).toBe('2020-05-01');
+    expect(result.query?.scoped.echr.dateJudgmentEnd).toBe('2020-05-01');
+    expect(result.query?.scoped.echr.dateDecisionEnd).toBe('2021-06-01');
+    expect(result.query?.scoped.echr.language).toContain('ENG');
+    expect(result.query?.scoped.rs.selectedLaws).toContain('BWBX1234|56');
+  });
 });

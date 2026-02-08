@@ -30,6 +30,7 @@ export function buildEffectiveEchrFilters(query: SearchQuery): EchrSearchFilters
     const scoped = query.scoped ?? createDefaultSearchQuery().scoped;
     return {
         text: mergeText(query.text, scoped.echr.text),
+        title: mergeList(query.title, scoped.echr.title),
         keywords: mergeList(query.keywords, scoped.echr.keywords),
         eclis: mergeList(query.eclis, scoped.echr.eclis),
         dateStart: mergeDateStart(query.dateStart, scoped.echr.dateStart),
@@ -39,7 +40,12 @@ export function buildEffectiveEchrFilters(query: SearchQuery): EchrSearchFilters
         articleNonViolated: mergeList(query.articleNonViolated, scoped.echr.articleNonViolated),
         respondentState: mergeList(query.respondentState, scoped.echr.respondentState),
         documentType: mergeList(query.documentType, scoped.echr.documentType),
-        importance: mergeNumberList(query.importance, scoped.echr.importance)
+        importance: mergeNumberList(query.importance, scoped.echr.importance),
+        language: mergeList(query.language, scoped.echr.language),
+        dateJudgmentStart: mergeDateStart(query.dateJudgmentStart, scoped.echr.dateJudgmentStart),
+        dateJudgmentEnd: mergeDateEnd(query.dateJudgmentEnd, scoped.echr.dateJudgmentEnd),
+        dateDecisionStart: mergeDateStart(query.dateDecisionStart, scoped.echr.dateDecisionStart),
+        dateDecisionEnd: mergeDateEnd(query.dateDecisionEnd, scoped.echr.dateDecisionEnd)
     };
 }
 
@@ -47,16 +53,26 @@ export function buildEffectiveRsFilters(query: SearchQuery): RsSearchFilters {
     const scoped = query.scoped ?? createDefaultSearchQuery().scoped;
     return {
         text: mergeText(query.text, scoped.rs.text),
+        title: mergeList(query.title, scoped.rs.title),
         keywords: mergeList(query.keywords, scoped.rs.keywords),
         eclis: mergeList(query.eclis, scoped.rs.eclis),
         dateStart: mergeDateStart(query.dateStart, scoped.rs.dateStart),
         dateEnd: mergeDateEnd(query.dateEnd, scoped.rs.dateEnd),
         documentType: mergeList(query.documentType, scoped.rs.documentType),
         instances: mergeList(query.instances, scoped.rs.instances),
-        domains: mergeList(query.domains, scoped.rs.domains)
+        domains: mergeList(query.domains, scoped.rs.domains),
+        articles: mergeList(query.articles, scoped.rs.articles),
+        selectedLaws: mergeList(query.selectedLaws, scoped.rs.selectedLaws)
     };
 }
 
 export function hasCommonFilters(query: SearchQuery): boolean {
-    return !!(query.text.trim() || query.keywords.length || query.eclis.length || query.dateStart || query.dateEnd);
+    return !!(
+        query.text.trim() ||
+        query.title.length ||
+        query.keywords.length ||
+        query.eclis.length ||
+        query.dateStart ||
+        query.dateEnd
+    );
 }

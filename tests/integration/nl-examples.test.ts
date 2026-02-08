@@ -115,8 +115,8 @@ describe('natural language examples (EN + NL)', () => {
       en: '12 March 2020 to 5 May 2021',
       nl: '12 maart 2020 tot 5 mei 2021',
       expects: [
-        { field: 'year', operator: 'after', value: '2020' },
-        { field: 'year', operator: 'before', value: '2021' }
+        { field: 'dateStart', operator: 'equals', value: '2020-03-12' },
+        { field: 'dateEnd', operator: 'equals', value: '2021-05-05' }
       ]
     },
     {
@@ -149,6 +149,30 @@ describe('natural language examples (EN + NL)', () => {
       expects: [
         { field: 'respondent_state', value: 'France', scope: 'ECHR' },
         { field: 'document_type', value: 'HEDEC' }
+      ]
+    },
+    {
+      en: 'language ENG and judgment date on 2020-05-01',
+      nl: 'taal ENG en arrestdatum op 2020-05-01',
+      expects: [
+        { field: 'language', value: 'ENG', scope: 'ECHR' },
+        { field: 'date_judgment_start', value: '2020-05-01', operator: 'equals', scope: 'ECHR' }
+      ]
+    },
+    {
+      en: 'selected law BWBX1234|56 and Rechtspraak',
+      nl: 'geselecteerde wet BWBX1234|56 en rechtspraak',
+      expects: [
+        { field: 'selectedLaws', value: 'BWBX1234|56', scope: 'RS' },
+        { field: 'source', value: 'RS' }
+      ]
+    },
+    {
+      en: 'title "freedom of expression" 2019',
+      nl: 'titel "freedom of expression" 2019',
+      expects: [
+        { field: 'title', value: 'freedom of expression' },
+        { field: 'year', value: '2019' }
       ]
     }
   ];

@@ -10,7 +10,13 @@ const EN_COUNTRIES = [
     'Belgium',
     'Switzerland',
     'Greece',
-    'Portugal'
+    'Portugal',
+    'Norway',
+    'Sweden',
+    'Denmark',
+    'Ireland',
+    'Czech Republic',
+    'Austria'
 ];
 
 const NL_COUNTRIES = [
@@ -25,7 +31,13 @@ const NL_COUNTRIES = [
     'Belgie',
     'Zwitserland',
     'Griekenland',
-    'Portugal'
+    'Portugal',
+    'Noorwegen',
+    'Zweden',
+    'Denemarken',
+    'Ierland',
+    'Tsjechie',
+    'Oostenrijk'
 ];
 
 const YEARS = [
@@ -56,7 +68,10 @@ const DOMAINS = [
     'Bestuursrecht',
     'Belastingrecht',
     'Arbeidsrecht',
-    'Vreemdelingenrecht'
+    'Vreemdelingenrecht',
+    'Intellectueel-eigendomsrecht',
+    'Personen- en familierecht',
+    'Ondernemingsrecht'
 ];
 
 const INSTANCES = [
@@ -65,7 +80,9 @@ const INSTANCES = [
     'Rechtbank Amsterdam',
     'Rechtbank Den Haag',
     'Gerechtshof Arnhem-Leeuwarden',
-    'Gerechtshof Den Haag'
+    'Gerechtshof Den Haag',
+    'Rechtbank Rotterdam',
+    'Rechtbank Noord-Holland'
 ];
 
 const DOC_TYPES_EN = [
@@ -88,7 +105,31 @@ const KEYWORDS = [
     '"fair trial"',
     '"private life"',
     '"property rights"',
-    '"due process"'
+    '"due process"',
+    '"asylum seeker"',
+    '"tax law"',
+    '"data protection"',
+    '"family life"',
+    '"detention conditions"'
+];
+
+const TITLES = [
+    '"freedom of expression"',
+    '"right to life"',
+    '"privacy and family life"',
+    '"fair trial"',
+    '"property rights"',
+    '"data protection"'
+];
+
+const LANGUAGES = ['ENG', 'FRA', 'DEU', 'NLD'];
+
+const DATE_EXACTS = [
+    '2018-03-12',
+    '2019-05-01',
+    '2020-01-15',
+    '2021-09-30',
+    '2022-06-10'
 ];
 
 function pick<T>(list: T[], index: number): T {
@@ -117,10 +158,14 @@ function buildExamples(): string[] {
         const docEn = pick(DOC_TYPES_EN, i);
         const docNl = pick(DOC_TYPES_NL, i);
         const keyword = pick(KEYWORDS, i);
+        const title = pick(TITLES, i);
+        const language = pick(LANGUAGES, i);
+        const exactDate = pick(DATE_EXACTS, i);
         const [start, end] = pickRange(i);
         const app = `${10000 + i}/${(10 + (i % 90)).toString().padStart(2, '0')}`;
+        const law = `BWBX${1000 + (i % 9000)}|${10 + (i % 80)}`;
 
-        switch (i % 12) {
+        switch (i % 20) {
             case 0:
                 examples.add(`Cases in ${country} in ${year}`);
                 break;
@@ -156,6 +201,30 @@ function buildExamples(): string[] {
                 break;
             case 11:
                 examples.add(`ECHR application number ${app} and ${keyword}`);
+                break;
+            case 12:
+                examples.add(`Cases in ${country} ${year} degree target 2`);
+                break;
+            case 13:
+                examples.add(`ECHR Article ${article} ${year} depth 2`);
+                break;
+            case 14:
+                examples.add(`Rechtspraak ${domain} ${year} degree source 1`);
+                break;
+            case 15:
+                examples.add(`title ${title} ${year}`);
+                break;
+            case 16:
+                examples.add(`language ${language} judgment date on ${exactDate}`);
+                break;
+            case 17:
+                examples.add(`decision date before ${exactDate} ${keyword}`);
+                break;
+            case 18:
+                examples.add(`selected law ${law} ${year}`);
+                break;
+            case 19:
+                examples.add(`Rechtspraak articles "BWBR0001830" ${year}`);
                 break;
             default:
                 break;

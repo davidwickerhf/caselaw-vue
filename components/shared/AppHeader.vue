@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Scale, Moon, Sun } from "lucide-vue-next";
+import { Scale, Moon, Sun, Search } from "lucide-vue-next";
 
 const props = defineProps<{
 	fixed?: boolean;
@@ -32,7 +32,7 @@ function toggleMode() {
 
 				<div class="flex items-center">
 					<nav
-						class="flex items-center gap-5 pr-4 text-sm text-muted-foreground"
+						class="flex items-center gap-7 pr-4 text-sm text-muted-foreground"
 					>
 						<NuxtLink
 							to="/examples"
@@ -41,24 +41,32 @@ function toggleMode() {
 							Examples
 						</NuxtLink>
 						<NuxtLink
-							to="/framework"
+							to="/docs"
 							class="hover:text-foreground transition-colors"
 						>
-							Framework
+							Docs
 						</NuxtLink>
 						<NuxtLink
-							to="/"
-							target="_blank"
-							rel="noopener"
+							to="/about"
 							class="hover:text-foreground transition-colors"
 						>
-							New Search
+							About
 						</NuxtLink>
 					</nav>
 				</div>
 			</div>
 
 			<div class="flex flex-row h-full">
+				<div class="w-px h-full bg-border" />
+				<NuxtLink
+					to="/"
+					target="_blank"
+					rel="noopener"
+					class="group flex h-full items-center justify-center gap-2 whitespace-nowrap px-4 text-sm text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
+				>
+					<Search class="h-4 w-4 transition-transform group-hover:scale-105" />
+					New Tab
+				</NuxtLink>
 				<div class="w-px h-full bg-border" />
 				<button
 					class="group flex h-full w-12 shrink-0 items-center justify-center px-0 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"

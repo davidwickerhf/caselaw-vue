@@ -26,6 +26,19 @@ const isFullyLoaded = computed(() => !!fullCache.value[baseKey(query.value)])
 
 // Abort function for cancelling background page loading on new searches
 let abortBackground: (() => void) | null = null
+let activeController: AbortController | null = null
+let activeSearchSeq = 0
+
+function abortAll() {
+  if (abortBackground) {
+    abortBackground()
+    abortBackground = null
+  }
+  if (activeController) {
+    activeController.abort()
+    activeController = null
+  }
+}
 
 function resolveGroup(q: SearchQuery) {
   return q.queryBuilderGroup || searchQueryToQueryBuilderGroup(q)
@@ -52,7 +65,12 @@ function serializeGroup(group: SearchQuery['queryBuilderGroup']): unknown {
 }
 
 function baseKey(q: SearchQuery): string {
-  return JSON.stringify({ group: serializeGroup(resolveGroup(q)) })
+  return JSON.stringify({
+    group: serializeGroup(resolveGroup(q)),
+    degreesSource: q.degreesSource,
+    degreesTarget: q.degreesTarget,
+    isSubgraph: q.isSubgraph
+  })
 }
 
 function pageKey(q: SearchQuery): string {
@@ -60,7 +78,10 @@ function pageKey(q: SearchQuery): string {
     group: serializeGroup(resolveGroup(q)),
     sortBy: q.sortBy,
     sortDirection: q.sortDirection,
-    pageSize: q.pageSize
+    pageSize: q.pageSize,
+    degreesSource: q.degreesSource,
+    degreesTarget: q.degreesTarget,
+    isSubgraph: q.isSubgraph
   })
 }
 
@@ -144,10 +165,9 @@ function gatherCachedResults(key: string): Citation[] {
 
 async function search() {
   // Abort any in-progress background loading from a previous search
-  if (abortBackground) {
-    abortBackground()
-    abortBackground = null
-  }
+  abortAll()
+  const searchSeq = ++activeSearchSeq
+  activeController = new AbortController()
 
   const requestedPage = query.value.page
   const requestedCursor = query.value.cursor
@@ -192,6 +212,7 @@ async function search() {
       ? { facets: results.value.facets, total: results.value.total, totalIsExact: results.value.totalIsExact }
       : undefined
     const abort = await executeSearch(query.value, (result) => {
+      if (searchSeq !== activeSearchSeq) return
       results.value = result
       if (result.nextCursor !== undefined) {
         cursorHistory.value = { ...cursorHistory.value, [requestedPage + 1]: result.nextCursor }
@@ -202,13 +223,17 @@ async function search() {
       pageCache.value[key] = { ...(pageCache.value[key] || {}), [requestedPage]: result }
       applySelectAllToResults(result.results)
     }, seed, (payload) => {
+      if (searchSeq !== activeSearchSeq) return
       if (!payload.complete) return
       const facets = computeFacets(payload.all)
       fullCache.value[base] = { results: payload.all, facets }
       rebuildSelectedFromAll(payload.all)
-    })
+    }, { controller: activeController })
     abortBackground = abort
   } catch (err) {
+    if ((err as Error)?.name === 'AbortError') {
+      return
+    }
     error.value = err instanceof Error ? err.message : 'Search failed'
     results.value = null
     loading.value = false
@@ -225,10 +250,7 @@ function resetPagination() {
 }
 
 function resetQuery() {
-  if (abortBackground) {
-    abortBackground()
-    abortBackground = null
-  }
+  abortAll()
   query.value = createDefaultSearchQuery()
   results.value = null
   error.value = null
@@ -401,6 +423,7 @@ export function useSearch() {
     search,
     setQuery,
     resetQuery,
+    abortAll,
     resetPagination,
     selectResult,
     closeDetail,

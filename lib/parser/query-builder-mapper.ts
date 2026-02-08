@@ -18,8 +18,18 @@ export function tokenScope(token: ParsedToken): SourceScope {
             if (value.startsWith('HE')) return 'ECHR';
             return 'ANY';
         }
+        case 'language':
+        case 'date_judgment_start':
+        case 'date_judgment_end':
+        case 'date_judgment_exact':
+        case 'date_decision_start':
+        case 'date_decision_end':
+        case 'date_decision_exact':
+            return 'ECHR';
         case 'instance':
         case 'domain':
+        case 'articles':
+        case 'selected_laws':
             return 'RS';
         default:
             return 'ANY';
@@ -36,16 +46,28 @@ export function tokenToRule(token: ParsedToken): QueryBuilderRule | null {
         article_non_violated: { field: 'article_non_violated', operator: 'equals' },
         respondent_state: { field: 'respondent_state', operator: 'equals' },
         application_number: { field: 'application_number', operator: 'equals' },
+        language: { field: 'language', operator: 'equals' },
         year: { field: 'year', operator: 'equals' },
         date_start: { field: 'year', operator: 'after' },
         date_end: { field: 'year', operator: 'before' },
+        date_start_exact: { field: 'dateStart', operator: 'equals' },
+        date_end_exact: { field: 'dateEnd', operator: 'equals' },
+        date_judgment_start: { field: 'date_judgment_start', operator: 'after' },
+        date_judgment_end: { field: 'date_judgment_end', operator: 'before' },
+        date_judgment_exact: { field: 'date_judgment_start', operator: 'equals' },
+        date_decision_start: { field: 'date_decision_start', operator: 'after' },
+        date_decision_end: { field: 'date_decision_end', operator: 'before' },
+        date_decision_exact: { field: 'date_decision_start', operator: 'equals' },
         document_type: { field: 'document_type', operator: 'equals' },
         importance: { field: 'importance', operator: 'equals' },
         instance: { field: 'instance', operator: 'equals' },
         domain: { field: 'domain', operator: 'equals' },
+        articles: { field: 'articles', operator: 'contains' },
+        selected_laws: { field: 'selectedLaws', operator: 'equals' },
+        title: { field: 'title', operator: 'contains' },
         source: { field: 'source', operator: 'equals' },
         ecli: { field: 'ecli', operator: 'equals' },
-        keyword: { field: 'keywords', operator: 'contains' },
+        keyword: { field: 'text', operator: 'contains' },
     };
 
     const mapping = fieldMap[token.type];

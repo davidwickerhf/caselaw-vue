@@ -55,6 +55,7 @@ export type SourceScope = 'ANY' | 'ECHR' | 'RS';
 
 export type CommonSearchFilters = {
     text: string;
+    title: string[];
     keywords: string[];
     eclis: string[];
     dateStart?: string;
@@ -69,12 +70,19 @@ export type EchrSearchFilters = CommonSearchFilters & {
     applicationNumbers: string[];
     documentType: string[];
     importance: number[];
+    language: string[];
+    dateJudgmentStart?: string;
+    dateJudgmentEnd?: string;
+    dateDecisionStart?: string;
+    dateDecisionEnd?: string;
 };
 
 export type RsSearchFilters = CommonSearchFilters & {
     documentType: string[];
     instances: string[];
     domains: string[];
+    articles: string[];
+    selectedLaws: string[];
 };
 
 export type ScopedSearchFilters = {
@@ -84,6 +92,7 @@ export type ScopedSearchFilters = {
 
 export type SearchQuery = {
     text: string;
+    title: string[];
     sources: DataSource[];
     keywords: string[];
     eclis: string[];
@@ -97,12 +106,22 @@ export type SearchQuery = {
     applicationNumbers: string[];
     documentType: string[];
     importance: number[];
+    language: string[];
     instances: string[];
     domains: string[];
+    articles: string[];
+    selectedLaws: string[];
+    dateJudgmentStart?: string;
+    dateJudgmentEnd?: string;
+    dateDecisionStart?: string;
+    dateDecisionEnd?: string;
     sortBy: 'relevance' | 'date' | 'citations' | 'importance';
     sortDirection: 'asc' | 'desc';
     page: number;
     pageSize: number;
+    degreesSource: number;
+    degreesTarget: number;
+    isSubgraph: boolean;
     scoped: ScopedSearchFilters;
     queryBuilderGroup?: QueryBuilderGroup;
 };
@@ -119,6 +138,8 @@ export type SearchResult = {
     aiSummary?: string;
     relatedSearches?: string[];
     didYouMean?: string;
+    edges?: ApiEdge[];
+    edgesPagination?: ApiEdgesPagination;
 };
 
 export type SearchFacets = {
@@ -165,13 +186,29 @@ export type ParsedTokenType =
     | 'article_non_violated'
     | 'respondent_state'
     | 'application_number'
+    | 'language'
     | 'year'
     | 'date_start'
     | 'date_end'
+    | 'date_start_exact'
+    | 'date_end_exact'
+    | 'date_judgment_start'
+    | 'date_judgment_end'
+    | 'date_judgment_exact'
+    | 'date_decision_start'
+    | 'date_decision_end'
+    | 'date_decision_exact'
+    | 'degree_source'
+    | 'degree_target'
+    | 'degree_depth'
+    | 'subgraph'
     | 'document_type'
     | 'importance'
     | 'instance'
     | 'domain'
+    | 'articles'
+    | 'selected_laws'
+    | 'title'
     | 'source'
     | 'ecli'
     | 'keyword';
@@ -216,16 +253,24 @@ export type ApiPagination = {
     nextCursor?: string;
 };
 
+export type ApiEdgesPagination = {
+    pageSize: number;
+    nextCursor?: string;
+    total?: number;
+};
+
 export type ApiNetworkResponse = {
     nodes: ApiNode[];
     edges: ApiEdge[];
     message?: string;
     pagination?: ApiPagination;
+    edgesPagination?: ApiEdgesPagination;
 };
 
 export function createDefaultSearchQuery(): SearchQuery {
     return {
         text: '',
+        title: [],
         sources: [DataSource.ECHR, DataSource.RS],
         keywords: [],
         eclis: [],
@@ -237,15 +282,26 @@ export function createDefaultSearchQuery(): SearchQuery {
         applicationNumbers: [],
         documentType: [],
         importance: [],
+        language: [],
         instances: [],
         domains: [],
+        articles: [],
+        selectedLaws: [],
+        dateJudgmentStart: undefined,
+        dateJudgmentEnd: undefined,
+        dateDecisionStart: undefined,
+        dateDecisionEnd: undefined,
         sortBy: 'relevance',
         sortDirection: 'desc',
         page: 1,
         pageSize: 100,
+        degreesSource: 0,
+        degreesTarget: 0,
+        isSubgraph: false,
         scoped: {
             echr: {
                 text: '',
+                title: [],
                 keywords: [],
                 eclis: [],
                 articleViolated: [],
@@ -254,15 +310,23 @@ export function createDefaultSearchQuery(): SearchQuery {
                 respondentState: [],
                 applicationNumbers: [],
                 documentType: [],
-                importance: []
+                importance: [],
+                language: [],
+                dateJudgmentStart: undefined,
+                dateJudgmentEnd: undefined,
+                dateDecisionStart: undefined,
+                dateDecisionEnd: undefined
             },
             rs: {
                 text: '',
+                title: [],
                 keywords: [],
                 eclis: [],
                 documentType: [],
                 instances: [],
-                domains: []
+                domains: [],
+                articles: [],
+                selectedLaws: []
             }
         }
     };

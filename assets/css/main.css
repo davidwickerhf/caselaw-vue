@@ -83,6 +83,10 @@
 		opacity: 0.5;
 		pointer-events: none;
 	}
+	.smart-search-editor.hide-placeholder:empty::before {
+		content: '';
+		opacity: 0;
+	}
 	.smart-search-editor {
 		white-space: pre-wrap;
 	}

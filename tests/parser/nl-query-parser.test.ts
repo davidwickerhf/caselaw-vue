@@ -65,4 +65,31 @@ describe('parseNaturalLanguageToQueryBuilderGroup', () => {
     expect(after?.value).toBe('2014');
     expect(before?.value).toBe('2016');
   });
+
+  it('detects explicit ISO date start and end', () => {
+    const group = parseNaturalLanguageToQueryBuilderGroup('date start 2020-02-01 and date end 2020-03-15');
+    const startRule = findRule(group, 'dateStart', '2020-02-01');
+    const endRule = findRule(group, 'dateEnd', '2020-03-15');
+    expect(startRule?.operator).toBe('equals');
+    expect(endRule?.operator).toBe('equals');
+  });
+
+  it('detects judgment date equals', () => {
+    const group = parseNaturalLanguageToQueryBuilderGroup('judgment date on 2020-05-01');
+    const rule = findRule(group, 'date_judgment_start', '2020-05-01');
+    expect(rule?.operator).toBe('equals');
+    expect(rule?.sourceScope).toBe('ECHR');
+  });
+
+  it('detects language ISO-3 codes', () => {
+    const group = parseNaturalLanguageToQueryBuilderGroup('language ENG');
+    const rule = findRule(group, 'language', 'ENG');
+    expect(rule?.sourceScope).toBe('ECHR');
+  });
+
+  it('detects selected laws', () => {
+    const group = parseNaturalLanguageToQueryBuilderGroup('selected law BWBX1234|56');
+    const rule = findRule(group, 'selectedLaws', 'BWBX1234|56');
+    expect(rule?.sourceScope).toBe('RS');
+  });
 });

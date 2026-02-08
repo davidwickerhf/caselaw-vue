@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Sparkles, Scale, MapPin, Calendar, FileText, Tag } from 'lucide-vue-next'
+import { Sparkles, Scale, MapPin, Calendar, FileText, Tag, GitBranch } from 'lucide-vue-next'
 
 interface Suggestion {
   id: string
@@ -28,6 +28,7 @@ function suggestionIcon(type: string) {
   if (type === 'state') return MapPin
   if (type === 'date') return Calendar
   if (type === 'document') return FileText
+  if (type === 'graph') return GitBranch
   if (type === 'tag') return Tag
   return Sparkles
 }

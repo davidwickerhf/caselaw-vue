@@ -14,6 +14,7 @@ import {
 } from "~/lib/utils/query-builder-url";
 import { useSearch } from "~/composables/useSearch";
 import { useHistory, type HistoryEntry } from "~/composables/useHistory";
+import { SEARCH_EXAMPLES } from "~/lib/utils/search-examples";
 
 const route = useRoute();
 const router = useRouter();
@@ -23,17 +24,31 @@ const smartSearch = useSmartSearch();
 const queryBuilderOpen = ref(false);
 const showCompactLogo = computed(() => queryBuilderOpen.value);
 const submitError = ref<string | null>(null);
+const searchBarResetKey = ref(0);
 
-const exampleSearches = [
-	"Article 3 violation Turkey",
-	"Right to fair trial",
-	"Privacy and family life",
-	"Freedom of expression",
-	"Discrimination cases 2020",
-	"Rechtspraak intellectual property",
-];
+const exampleSearches = ref<string[]>([]);
+
+function shuffleExamples(list: string[]): string[] {
+	const arr = [...list];
+	for (let i = arr.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[arr[i], arr[j]] = [arr[j], arr[i]];
+	}
+	return arr;
+}
+
+function ensureSearchStringFromInput() {
+	if (
+		!smartSearch.searchString.value &&
+		smartSearch.lastEditSource.value === "searchbar" &&
+		smartSearch.rawText.value.trim()
+	) {
+		smartSearch.setSearchString(smartSearch.rawText.value);
+	}
+}
 
 function navigateToResults() {
+	ensureSearchStringFromInput();
 	const parsed = queryBuilderGroupToSearchQuery(
 		smartSearch.queryBuilderGroup.value,
 	);
@@ -42,30 +57,35 @@ function navigateToResults() {
 		return;
 	}
 	submitError.value = null;
-	store.setQuery({
+	const nextQuery = {
 		...parsed.query,
+		degreesSource: smartSearch.degreesSource.value,
+		degreesTarget: smartSearch.degreesTarget.value,
+		isSubgraph: smartSearch.isSubgraph.value,
 		queryBuilderGroup: smartSearch.queryBuilderGroup.value,
-	});
-	const includeSearchString =
-		smartSearch.lastEditSource.value === "searchbar" &&
-		!!smartSearch.searchString.value;
+	};
+	store.setQuery(nextQuery);
+	const includeSearchString = !!smartSearch.searchString.value;
 	const rawSearchText = includeSearchString
 		? smartSearch.searchString.value
 		: "";
-	history.add(parsed.query, undefined, rawSearchText);
-	const params = queryBuilderGroupToParams(
-		smartSearch.queryBuilderGroup.value,
-		{
-			pageSize: parsed.query.pageSize,
-			cursor: parsed.query.cursor,
-			searchString: includeSearchString
-				? smartSearch.searchString.value
-				: undefined,
-			sortBy: parsed.query.sortBy,
-			sortDirection: parsed.query.sortDirection,
-			page: parsed.query.page,
-		},
-	);
+	history.add(nextQuery, undefined, rawSearchText);
+		const params = queryBuilderGroupToParams(
+			smartSearch.queryBuilderGroup.value,
+			{
+				pageSize: nextQuery.pageSize,
+				cursor: nextQuery.cursor,
+				searchString: includeSearchString
+					? smartSearch.searchString.value
+					: undefined,
+				sortBy: nextQuery.sortBy,
+				sortDirection: nextQuery.sortDirection,
+				page: nextQuery.page,
+				degreesSource: nextQuery.degreesSource,
+				degreesTarget: nextQuery.degreesTarget,
+				isSubgraph: nextQuery.isSubgraph,
+			},
+		);
 	router.push({
 		path: "/results",
 		query: Object.fromEntries(params.entries()),
@@ -78,11 +98,17 @@ function handleSubmit() {
 
 function handleClear() {
 	store.resetQuery();
+	smartSearch.clearAll();
+	smartSearch.setFromText("");
+	smartSearch.setSearchString("");
+	searchBarResetKey.value += 1;
 	submitError.value = null;
+	router.replace({ path: "/", query: {} });
 }
 
 function handleExampleSearch(text: string) {
 	smartSearch.setFromText(text);
+	smartSearch.setSearchString(text);
 	navigateToResults();
 }
 
@@ -90,6 +116,7 @@ function handleHistorySelect(entry: HistoryEntry) {
 	const entryText = entry?.text?.trim();
 	if (entryText) {
 		smartSearch.setFromText(entryText);
+		smartSearch.setSearchString(entryText);
 		navigateToResults();
 		return;
 	}
@@ -103,6 +130,7 @@ onMounted(() => {
 	store.resetQuery();
 	smartSearch.clearAll();
 	submitError.value = null;
+	exampleSearches.value = shuffleExamples(SEARCH_EXAMPLES).slice(0, 6);
 
 	const params = new URLSearchParams();
 	for (const [key, value] of Object.entries(route.query)) {
@@ -131,16 +159,38 @@ onMounted(() => {
 		page: parsed.state.page || result.query.page,
 		sortBy: parsed.state.sortBy || result.query.sortBy,
 		sortDirection: parsed.state.sortDirection || result.query.sortDirection,
+		degreesSource:
+			parsed.state.degreesSource !== undefined
+				? parsed.state.degreesSource
+				: result.query.degreesSource,
+		degreesTarget:
+			parsed.state.degreesTarget !== undefined
+				? parsed.state.degreesTarget
+				: result.query.degreesTarget,
+		isSubgraph:
+			parsed.state.isSubgraph !== undefined
+				? parsed.state.isSubgraph
+				: result.query.isSubgraph,
 	};
 
 	if (parsed.state.searchString) {
 		smartSearch.setFromText(parsed.state.searchString);
 		smartSearch.onQueryBuilderEdit(group);
 		smartSearch.setSearchString(parsed.state.searchString);
+		smartSearch.setDegrees({
+			source: nextQuery.degreesSource,
+			target: nextQuery.degreesTarget,
+			isSubgraph: nextQuery.isSubgraph,
+		});
 	} else {
 		smartSearch.setFromText("");
 		smartSearch.onQueryBuilderEdit(group);
 		smartSearch.setSearchString("");
+		smartSearch.setDegrees({
+			source: nextQuery.degreesSource,
+			target: nextQuery.degreesTarget,
+			isSubgraph: nextQuery.isSubgraph,
+		});
 	}
 	store.setQuery({ ...nextQuery, queryBuilderGroup: group });
 	submitError.value = null;
@@ -149,12 +199,72 @@ onMounted(() => {
 
 <template>
 	<div
-		class="h-screen overflow-hidden bg-gradient-to-b from-background via-background to-muted/30"
+		class="relative isolate h-screen overflow-hidden bg-gradient-to-b from-background via-background to-muted/30"
 	>
-		<AppHeader fixed />
+		<div class="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+			<div
+				class="absolute inset-0 opacity-60 dark:hidden"
+				style="
+					background-image: radial-gradient(
+						rgba(15, 23, 42, 0.2) 1.2px,
+						transparent 1px
+					);
+					background-size: 18px 18px;
+					mask-image: radial-gradient(
+						circle at center,
+						transparent 0%,
+						transparent 45%,
+						black 65%,
+						black 100%
+					);
+					mask-position: center;
+					mask-repeat: no-repeat;
+					-webkit-mask-image: radial-gradient(
+						circle at center,
+						transparent 0%,
+						transparent 45%,
+						black 65%,
+						black 100%
+					);
+					-webkit-mask-position: center;
+					-webkit-mask-repeat: no-repeat;
+				"
+			/>
+			<div
+				class="absolute inset-0 hidden opacity-50 dark:block"
+				style="
+					background-image: radial-gradient(
+						rgba(248, 250, 252, 0.2) 1.2px,
+						transparent 1px
+					);
+					background-size: 18px 18px;
+					mask-image: radial-gradient(
+						circle at center,
+						transparent 0%,
+						transparent 45%,
+						black 65%,
+						black 100%
+					);
+					mask-position: center;
+					mask-repeat: no-repeat;
+					-webkit-mask-image: radial-gradient(
+						circle at center,
+						transparent 0%,
+						transparent 45%,
+						black 65%,
+						black 100%
+					);
+					-webkit-mask-position: center;
+					-webkit-mask-repeat: no-repeat;
+				"
+			/>
+		</div>
+		<div class="relative z-20 pointer-events-auto">
+			<AppHeader fixed />
+		</div>
 
 		<!-- Scrollable middle -->
-		<main class="h-full overflow-y-auto px-6 pt-20 pb-20">
+		<main class="relative z-10 h-full overflow-y-auto px-6 pt-20 pb-20">
 			<div
 				class="mx-auto flex min-h-[calc(100vh-10rem)] max-w-[680px] flex-col justify-center space-y-10"
 			>
@@ -185,9 +295,10 @@ onMounted(() => {
 				<!-- Smart search bar -->
 				<div class="space-y-4">
 					<SmartSearchBar
+						:key="searchBarResetKey"
 						:loading="store.loading.value"
 						size="large"
-						autofocus
+						:autofocus="false"
 						:chips="false"
 						@submit="handleSubmit"
 						@clear="handleClear"
