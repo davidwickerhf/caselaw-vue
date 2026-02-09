@@ -11,10 +11,12 @@ import { onBeforeRouteLeave } from "vue-router";
 import {
 	Loader2,
 	Filter,
-	Brackets,
+	Pencil,
+	Copy,
+	Check,
+	X,
 	ArrowLeft,
 	AlertCircle,
-	X,
 } from "lucide-vue-next";
 import AppHeader from "~/components/shared/AppHeader.vue";
 import AppFooter from "~/components/shared/AppFooter.vue";
@@ -124,6 +126,7 @@ const syncingSmartSearch = ref(false);
 const queryBuilderOpen = ref(false);
 const routeError = ref<string | null>(null);
 const lastAppliedSignature = ref("");
+const pendingDocEcli = ref<string | null>(null);
 const scopeConflictDetails = computed<{
 	echrRules: string[];
 	rsRules: string[];
@@ -140,7 +143,16 @@ const marqueeRef = ref<HTMLElement | null>(null);
 const summaryRowRef = ref<HTMLElement | null>(null);
 const shouldScroll = ref(false);
 const isEditingSummary = ref(false);
+const queryCopied = ref(false);
 const invalidRuleKeys = ref<Set<string>>(new Set());
+
+function copyQueryText() {
+	if (!summaryText.value) return;
+	navigator.clipboard.writeText(summaryText.value).then(() => {
+		queryCopied.value = true;
+		setTimeout(() => { queryCopied.value = false; }, 1500);
+	});
+}
 const filterState = ref<Partial<SearchQuery>>({});
 let marqueeObserver: ResizeObserver | null = null;
 const SCOPE_LABELS: Record<SourceScope, string> = {
@@ -1006,6 +1018,10 @@ function applyQueryAndSearch(
 			},
 		);
 		appendFilterParams(params, filterState.value);
+		// Preserve open document in URL
+		if (store.detailOpen.value && store.selectedResult.value?.ecli) {
+			params.set("doc", store.selectedResult.value.ecli);
+		}
 		syncingRoute.value = true;
 		router
 			.replace({
@@ -1019,6 +1035,7 @@ function applyQueryAndSearch(
 }
 
 function applyQueryBuilderEdits() {
+	handleCloseDetail();
 	const group = smartSearch.queryBuilderGroup.value;
 	const signature = buildAppliedSignature(group);
 	if (signature === lastAppliedSignature.value) return;
@@ -1069,6 +1086,7 @@ function handleInvalidRoute(error: string) {
 
 function handleClear() {
 	routeError.value = null;
+	store.closeDetail(); // no syncDocParam – URL is fully reset below
 	store.resetQuery();
 	smartSearch.clearAll();
 	smartSearch.setFromText("");
@@ -1088,6 +1106,11 @@ function applyRouteQuery() {
 		if (Array.isArray(value)) params.set(key, value.join(","));
 		else if (value) params.set(key, value);
 	}
+	// Restore open document from URL
+	const docEcli = params.get("doc");
+	pendingDocEcli.value = docEcli || null;
+	params.delete("doc"); // don't pass to query builder parsing
+
 	let shouldNormalize = !params.has("qb");
 
 	if ([...params.keys()].length === 0) {
@@ -1239,6 +1262,20 @@ watch(
 	},
 );
 
+// Restore open document from URL after results arrive
+watch(
+	() => store.results.value,
+	(results) => {
+		if (!pendingDocEcli.value || !results) return;
+		const ecli = pendingDocEcli.value;
+		const match = results.results.find((r) => r.ecli === ecli);
+		if (match) {
+			store.selectResult(match);
+		}
+		pendingDocEcli.value = null;
+	},
+);
+
 function handleSubmit() {
 	const parsed = queryBuilderGroupToSearchQuery(
 		smartSearch.queryBuilderGroup.value,
@@ -1276,6 +1313,7 @@ function handleSubmit() {
 }
 
 function handleEditSearch() {
+	store.closeDetail(); // no syncDocParam – URL is replaced by navigation below
 	store.abortAll();
 	if (
 		!smartSearch.searchString.value &&
@@ -1350,8 +1388,27 @@ function handlePageSizeChange(size: number) {
 	);
 }
 
+function syncDocParam(ecli?: string) {
+	const query = { ...route.query };
+	if (ecli) {
+		query.doc = ecli;
+	} else {
+		delete query.doc;
+	}
+	syncingRoute.value = true;
+	router.replace({ path: "/results", query }).finally(() => {
+		syncingRoute.value = false;
+	});
+}
+
 function handleSelectResult(citation: Citation) {
 	store.selectResult(citation);
+	syncDocParam(citation.ecli);
+}
+
+function handleCloseDetail() {
+	store.closeDetail();
+	syncDocParam();
 }
 
 function handleDidYouMean(text: string) {
@@ -1365,7 +1422,7 @@ function handleFindSimilar(citation: Citation) {
 		.join(" ");
 	smartSearch.setFromText(terms);
 	handleSubmit();
-	store.closeDetail();
+	store.closeDetail(); // no syncDocParam – handleSubmit replaces URL
 }
 </script>
 
@@ -1378,119 +1435,137 @@ function handleFindSimilar(citation: Citation) {
 				<!-- Query summary row -->
 				<div class="shrink-0 bg-background">
 					<div
-						class="flex h-12 w-full items-stretch border-b border-border p-0 m-0"
+						class="flex h-10 w-full items-stretch border-b border-border p-0 m-0"
 					>
+						<!-- Back to search -->
 						<button
-							class="group flex h-full items-center justify-center gap-2 px-4 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
+							class="group flex h-full w-10 shrink-0 items-center justify-center text-muted-foreground/60 transition-colors hover:text-foreground hover:bg-muted/40"
 							@click="handleEditSearch"
+							aria-label="Back to search"
+							title="Back to search"
 						>
 							<ArrowLeft
-								class="h-4 w-4 transition-transform group-hover:-translate-x-0.5"
+								class="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5"
 							/>
-							Edit Search
 						</button>
 						<div class="w-px self-stretch bg-border" />
 
-							<div class="flex-1 min-w-0">
-								<div class="flex h-full items-center px-6 min-w-0">
+						<!-- Query summary (inline-editable values) + copy button -->
+						<div class="flex-1 min-w-0">
+							<div class="flex h-full items-center pl-4 pr-1 min-w-0">
+								<div
+									v-if="summarySegments.length"
+									ref="marqueeRef"
+									class="query-marquee"
+									:title="summaryText"
+									@focusin="handleSummaryFocusIn"
+									@focusout="handleSummaryFocusOut"
+								>
 									<div
-										v-if="summarySegments.length"
-										ref="marqueeRef"
-										class="query-marquee"
-										:title="summaryText"
-										@focusin="handleSummaryFocusIn"
-										@focusout="handleSummaryFocusOut"
+										:class="[
+											'query-marquee-track',
+											shouldScroll && !isEditingSummary ? 'is-scrolling' : '',
+										]"
+										ref="summaryRowRef"
 									>
-										<div
-											:class="[
-												'query-marquee-track',
-												shouldScroll && !isEditingSummary ? 'is-scrolling' : '',
-											]"
-											ref="summaryRowRef"
-										>
-											<span class="query-text">
-												<template
-													v-for="(segment, idx) in summarySegments"
-													:key="`${segment.type}-${segment.type === 'value' ? segment.ruleId : idx}`"
-												>
-													<span v-if="segment.type === 'text'">{{ segment.text }}</span>
-													<span
-														v-else-if="segment.type === 'scope'"
-														:class="[
-															'query-value query-scope',
-															invalidRuleKeys.has(
-																`${segment.ruleId}:scope`,
-															)
-																? 'query-value-invalid'
-																: '',
-														]"
-														contenteditable="true"
-														spellcheck="false"
-														:data-rule-id="segment.ruleId"
-														data-edit="scope"
-														@input="handleSummaryInput"
-														@keyup="handleSummaryInput"
-														@paste="handleSummaryInput"
-														@keydown.enter="handleSummaryEnter"
-													>
-														{{ segment.text }}
-													</span>
-													<span
-														v-else
-														:class="[
-															'query-value',
-															invalidRuleKeys.has(
-																`${segment.ruleId}:value`,
-															)
-																? 'query-value-invalid'
-																: '',
-														]"
-														contenteditable="true"
-														spellcheck="false"
-														:data-rule-id="segment.ruleId"
-														data-edit="value"
-														@input="handleSummaryInput"
-														@keyup="handleSummaryInput"
-														@paste="handleSummaryInput"
-														@keydown.enter="handleSummaryEnter"
-													>
-														{{ segment.text }}
-													</span>
-												</template>
-											</span>
-											<span
-												v-if="shouldScroll && !isEditingSummary"
-												class="query-text"
-												aria-hidden="true"
-												>{{ summaryText }}</span
+										<span class="query-text">
+											<template
+												v-for="(segment, idx) in summarySegments"
+												:key="`${segment.type}-${segment.type === 'value' ? segment.ruleId : idx}`"
 											>
-										</div>
+												<span v-if="segment.type === 'text'">{{ segment.text }}</span>
+												<span
+													v-else-if="segment.type === 'scope'"
+													:class="[
+														'query-value query-scope',
+														invalidRuleKeys.has(
+															`${segment.ruleId}:scope`,
+														)
+															? 'query-value-invalid'
+															: '',
+													]"
+													contenteditable="true"
+													spellcheck="false"
+													:data-rule-id="segment.ruleId"
+													data-edit="scope"
+													@input="handleSummaryInput"
+													@keyup="handleSummaryInput"
+													@paste="handleSummaryInput"
+													@keydown.enter="handleSummaryEnter"
+												>
+													{{ segment.text }}
+												</span>
+												<span
+													v-else
+													:class="[
+														'query-value',
+														invalidRuleKeys.has(
+															`${segment.ruleId}:value`,
+														)
+															? 'query-value-invalid'
+															: '',
+													]"
+													contenteditable="true"
+													spellcheck="false"
+													:data-rule-id="segment.ruleId"
+													data-edit="value"
+													@input="handleSummaryInput"
+													@keyup="handleSummaryInput"
+													@paste="handleSummaryInput"
+													@keydown.enter="handleSummaryEnter"
+												>
+													{{ segment.text }}
+												</span>
+											</template>
+										</span>
+										<span
+											v-if="shouldScroll && !isEditingSummary"
+											class="query-text"
+											aria-hidden="true"
+											>{{ summaryText }}</span
+										>
 									</div>
-								<span v-else class="text-xs text-muted-foreground"
+								</div>
+								<span v-else class="text-xs text-muted-foreground/50"
 									>No search parameters</span
 								>
+								<!-- Copy (pinned next to query text) -->
+								<button
+									v-if="summarySegments.length"
+									class="shrink-0 ml-2 flex items-center justify-center text-muted-foreground/30 transition-colors hover:text-foreground"
+									@click="copyQueryText"
+									aria-label="Copy query"
+									title="Copy query"
+								>
+									<Check v-if="queryCopied" class="h-3 w-3 text-emerald-500" />
+									<Copy v-else class="h-3 w-3" />
+								</button>
 							</div>
 						</div>
 
-						<div class="w-px self-stretch bg-border" />
-						<button
-							class="group flex h-full w-40 shrink-0 items-center justify-center gap-2 px-4 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
-							@click="queryBuilderOpen = true"
-						>
-							<Brackets
-								class="h-4 w-4 transition-transform group-hover:scale-105"
-							/>
-							Query Builder
-						</button>
-						<div class="w-px self-stretch bg-border" />
-						<button
-							class="group flex h-full w-12 shrink-0 items-center justify-center px-0 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
-							@click="handleClear"
-							aria-label="Clear search"
-							title="Clear search"
-						>
-							<X class="h-4 w-4 transition-transform group-hover:scale-105" />
-						</button>
+						<!-- Right actions -->
+						<div class="flex shrink-0 items-stretch">
+							<div class="w-px self-stretch bg-border" />
+							<!-- Edit in query builder -->
+							<button
+								class="flex h-full w-9 items-center justify-center text-muted-foreground/40 transition-colors hover:text-foreground hover:bg-muted/40"
+								@click="queryBuilderOpen = true"
+								aria-label="Edit query"
+								title="Edit query"
+							>
+								<Pencil class="h-3.5 w-3.5" />
+							</button>
+							<div class="w-px self-stretch bg-border" />
+							<!-- Clear search -->
+							<button
+								class="flex h-full w-9 items-center justify-center text-muted-foreground/40 transition-colors hover:text-destructive hover:bg-muted/40"
+								@click="handleClear"
+								aria-label="Clear search"
+								title="Clear search"
+							>
+								<X class="h-3.5 w-3.5" />
+							</button>
+						</div>
 					</div>
 					<div v-if="routeError" class="px-6 pb-2">
 						<div
@@ -1708,7 +1783,7 @@ function handleFindSimilar(citation: Citation) {
 						>
 							<ResultDocument
 								:citation="store.selectedResult.value"
-								@close="store.closeDetail()"
+								@close="handleCloseDetail()"
 								@find-similar="handleFindSimilar"
 								@select-citation="handleSelectResult"
 							/>
@@ -1776,14 +1851,14 @@ function handleFindSimilar(citation: Citation) {
 .query-text {
 	font-size: 11px;
 	font-weight: 500;
-	letter-spacing: 0.02em;
-	color: hsl(var(--foreground) / 0.75);
+	letter-spacing: 0.01em;
+	color: hsl(var(--muted-foreground));
 	font-family:
 		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 		"Courier New", monospace;
 }
 .query-value {
-	color: hsl(var(--primary));
+	color: hsl(var(--foreground));
 	font-weight: 600;
 	outline: none;
 }

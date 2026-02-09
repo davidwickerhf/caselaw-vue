@@ -25,7 +25,11 @@ import Badge from "~/components/ui/badge/Badge.vue";
 import Button from "~/components/ui/button/Button.vue";
 import type { Citation } from "~/lib/types";
 import { formatDate } from "~/lib/utils/utils";
-import { fetchExpandNode, fetchDocumentFullText, type EchrLanguageEntry } from "~/lib/api/client";
+import {
+	fetchExpandNode,
+	fetchDocumentFullText,
+	type EchrLanguageEntry,
+} from "~/lib/api/client";
 
 const props = defineProps<{
 	citation: Citation | null;
@@ -162,7 +166,10 @@ function stripLeadingTitle(text: string, title: string | undefined): string {
 	if (!trimmedTitle) return text;
 	const trimmedText = text.trimStart();
 	if (trimmedText.startsWith(trimmedTitle)) {
-		return trimmedText.slice(trimmedTitle.length).replace(/^[\s\n\-–—:]+/, "").trimStart();
+		return trimmedText
+			.slice(trimmedTitle.length)
+			.replace(/^[\s\n\-–—:]+/, "")
+			.trimStart();
 	}
 	return text;
 }
@@ -238,9 +245,10 @@ function switchLanguage(lang: string) {
 	// Read from the cached languages map (no re-fetch needed)
 	if (languagesMap.value && languagesMap.value[lang]) {
 		const entry = languagesMap.value[lang];
-		fetchedFullText.value = entry.full_text_available && typeof entry.full_text === "string"
-			? entry.full_text
-			: null;
+		fetchedFullText.value =
+			entry.full_text_available && typeof entry.full_text === "string"
+				? entry.full_text
+				: null;
 	} else {
 		fetchedFullText.value = null;
 	}
@@ -254,8 +262,7 @@ function toggleFullText() {
 const hasCitesSection = computed(() => {
 	if (!props.citation) return false;
 	return (
-		(props.citation.cites?.length ?? 0) > 0 ||
-		(props.citation.nCiting ?? 0) > 0
+		(props.citation.cites?.length ?? 0) > 0 || (props.citation.nCiting ?? 0) > 0
 	);
 });
 const hasCitedBySection = computed(() => {
@@ -284,7 +291,9 @@ const citesDocsList = computed(() => {
 		return citedDocs.value.filter((d) => expandCitesEclis.value.has(d.ecli));
 	}
 	if (props.citation?.cites?.length) {
-		return citedDocs.value.filter((d) => props.citation!.cites!.includes(d.ecli));
+		return citedDocs.value.filter((d) =>
+			props.citation!.cites!.includes(d.ecli),
+		);
 	}
 	return [];
 });
@@ -294,7 +303,9 @@ const citedByDocsList = computed(() => {
 		return citedDocs.value.filter((d) => expandCitedByEclis.value.has(d.ecli));
 	}
 	if (props.citation?.cited_by?.length) {
-		return citedDocs.value.filter((d) => props.citation!.cited_by!.includes(d.ecli));
+		return citedDocs.value.filter((d) =>
+			props.citation!.cited_by!.includes(d.ecli),
+		);
 	}
 	return [];
 });
@@ -402,15 +413,15 @@ watch(
 			citedLoaded.value = false;
 			expandCitesEclis.value = new Set();
 			expandCitedByEclis.value = new Set();
-		// Reset full text state
-		if (fullTextAbort) fullTextAbort.abort();
-		fetchedFullText.value = null;
-		fullTextLoading.value = false;
-		fullTextError.value = null;
-		fullTextLoaded.value = false;
-		fullTextLanguage.value = null;
-		selectedLanguage.value = null;
-		languagesMap.value = null;
+			// Reset full text state
+			if (fullTextAbort) fullTextAbort.abort();
+			fetchedFullText.value = null;
+			fullTextLoading.value = false;
+			fullTextError.value = null;
+			fullTextLoaded.value = false;
+			fullTextLanguage.value = null;
+			selectedLanguage.value = null;
+			languagesMap.value = null;
 		}
 		// Fetch full text in the background as soon as the document opens
 		if (newEcli && props.citation) {
@@ -590,8 +601,8 @@ const metadataItems = computed(() => {
 								Citations
 							</div>
 							<div class="text-sm font-medium text-foreground/90">
-								{{ citation.nCited }} cited &middot;
-								{{ citation.nCiting }} citing
+								{{ citation.nCited }} Cited &middot;
+								{{ citation.nCiting }} Citing
 							</div>
 						</div>
 					</div>
@@ -792,7 +803,10 @@ const metadataItems = computed(() => {
 							variant="ghost"
 							size="sm"
 							class="h-6 ml-2 text-xs"
-							@click="fullTextLoaded = false; loadFullText()"
+							@click="
+								fullTextLoaded = false;
+								loadFullText();
+							"
 							>Retry</Button
 						>
 					</div>
@@ -814,14 +828,18 @@ const metadataItems = computed(() => {
 						<p class="text-xs text-muted-foreground">
 							Full text is not available for this document.
 						</p>
-						<p v-if="citation.url_publication" class="text-xs text-muted-foreground mt-1">
+						<p
+							v-if="citation.url_publication"
+							class="text-xs text-muted-foreground mt-1"
+						>
 							You can read the original on
 							<a
 								:href="citation.url_publication"
 								target="_blank"
 								rel="noopener noreferrer"
 								class="text-primary hover:underline"
-							>the source website</a>.
+								>the source website</a
+							>.
 						</p>
 					</div>
 				</div>
@@ -836,22 +854,32 @@ const metadataItems = computed(() => {
 					@click="toggleCites"
 				>
 					<div class="flex items-center gap-2">
-						<div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+						<div
+							class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
+						>
 							Cited Documents
 						</div>
 						<Badge variant="secondary" class="text-[10px] h-4 px-1.5">
 							{{ citesCount }}
 						</Badge>
 					</div>
-					<ChevronDown v-if="!citesExpanded" class="h-4 w-4 text-muted-foreground/60" />
+					<ChevronDown
+						v-if="!citesExpanded"
+						class="h-4 w-4 text-muted-foreground/60"
+					/>
 					<ChevronUp v-else class="h-4 w-4 text-muted-foreground/60" />
 				</button>
 
 				<div v-if="citesExpanded" class="pb-4 space-y-2">
 					<!-- Loading -->
-					<div v-if="citedLoading" class="flex items-center justify-center py-6">
+					<div
+						v-if="citedLoading"
+						class="flex items-center justify-center py-6"
+					>
 						<Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
-						<span class="ml-2 text-xs text-muted-foreground">Loading citations...</span>
+						<span class="ml-2 text-xs text-muted-foreground"
+							>Loading citations...</span
+						>
 					</div>
 
 					<!-- Error -->
@@ -860,7 +888,13 @@ const metadataItems = computed(() => {
 						class="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
 					>
 						{{ citedError }}
-						<Button variant="ghost" size="sm" class="h-6 ml-2 text-xs" @click="loadCitedDocuments">Retry</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 ml-2 text-xs"
+							@click="loadCitedDocuments"
+							>Retry</Button
+						>
 					</div>
 
 					<!-- Expanded doc cards -->
@@ -882,14 +916,19 @@ const metadataItems = computed(() => {
 									<div class="text-xs font-medium text-foreground truncate">
 										{{ doc.title || doc.ecli }}
 									</div>
-									<code class="text-[10px] text-muted-foreground/70 font-mono">{{ doc.ecli }}</code>
+									<code
+										class="text-[10px] text-muted-foreground/70 font-mono"
+										>{{ doc.ecli }}</code
+									>
 								</div>
 							</button>
 						</div>
 					</template>
 
 					<!-- Fallback: ECLI-only list (no expanded data) -->
-					<template v-else-if="!citedLoading && (citation.cites?.length ?? 0) > 0">
+					<template
+						v-else-if="!citedLoading && (citation.cites?.length ?? 0) > 0"
+					>
 						<div class="space-y-1">
 							<div
 								v-for="ecli in citation.cites"
@@ -912,22 +951,32 @@ const metadataItems = computed(() => {
 					@click="toggleCitedBy"
 				>
 					<div class="flex items-center gap-2">
-						<div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+						<div
+							class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
+						>
 							Cited By
 						</div>
 						<Badge variant="secondary" class="text-[10px] h-4 px-1.5">
 							{{ citedByCount }}
 						</Badge>
 					</div>
-					<ChevronDown v-if="!citedByExpanded" class="h-4 w-4 text-muted-foreground/60" />
+					<ChevronDown
+						v-if="!citedByExpanded"
+						class="h-4 w-4 text-muted-foreground/60"
+					/>
 					<ChevronUp v-else class="h-4 w-4 text-muted-foreground/60" />
 				</button>
 
 				<div v-if="citedByExpanded" class="pb-4 space-y-2">
 					<!-- Loading -->
-					<div v-if="citedLoading" class="flex items-center justify-center py-6">
+					<div
+						v-if="citedLoading"
+						class="flex items-center justify-center py-6"
+					>
 						<Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
-						<span class="ml-2 text-xs text-muted-foreground">Loading citations...</span>
+						<span class="ml-2 text-xs text-muted-foreground"
+							>Loading citations...</span
+						>
 					</div>
 
 					<!-- Error -->
@@ -936,7 +985,13 @@ const metadataItems = computed(() => {
 						class="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
 					>
 						{{ citedError }}
-						<Button variant="ghost" size="sm" class="h-6 ml-2 text-xs" @click="loadCitedDocuments">Retry</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 ml-2 text-xs"
+							@click="loadCitedDocuments"
+							>Retry</Button
+						>
 					</div>
 
 					<!-- Expanded doc cards -->
@@ -958,14 +1013,19 @@ const metadataItems = computed(() => {
 									<div class="text-xs font-medium text-foreground truncate">
 										{{ doc.title || doc.ecli }}
 									</div>
-									<code class="text-[10px] text-muted-foreground/70 font-mono">{{ doc.ecli }}</code>
+									<code
+										class="text-[10px] text-muted-foreground/70 font-mono"
+										>{{ doc.ecli }}</code
+									>
 								</div>
 							</button>
 						</div>
 					</template>
 
 					<!-- Fallback: ECLI-only list (no expanded data) -->
-					<template v-else-if="!citedLoading && (citation.cited_by?.length ?? 0) > 0">
+					<template
+						v-else-if="!citedLoading && (citation.cited_by?.length ?? 0) > 0"
+					>
 						<div class="space-y-1">
 							<div
 								v-for="ecli in citation.cited_by"

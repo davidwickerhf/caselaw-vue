@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { ChevronDown, ChevronRight, X, Filter } from 'lucide-vue-next'
-import Button from '~/components/ui/button/Button.vue'
+import { ChevronDown, ChevronRight, X, Filter, Search, PanelLeftClose } from 'lucide-vue-next'
 import Badge from '~/components/ui/badge/Badge.vue'
 import type { SearchFacets, SearchQuery } from '~/lib/types'
 
@@ -15,6 +14,8 @@ const emit = defineEmits<{
   change: [partial: Partial<SearchQuery>]
   toggleCollapse: []
 }>()
+
+const filterSearch = ref('')
 
 const expandedSections = ref<Set<string>>(new Set([
   'sources',
@@ -63,7 +64,7 @@ const activeFilters = computed(() => {
     chips.push({ label: dt, onremove: () => emit('change', { documentType: props.query.documentType.filter((d) => d !== dt) }) })
   }
   for (const imp of props.query.importance) {
-    const labels: Record<number, string> = { 1: 'Key case', 2: 'Important', 3: 'Moderate', 4: 'Low' }
+    const labels: Record<number, string> = { 1: 'Key case', 2: 'Important', 3: 'Moderate', 4: 'Low importance' }
     chips.push({ label: labels[imp] || `Imp. ${imp}`, onremove: () => emit('change', { importance: props.query.importance.filter((i) => i !== imp) }) })
   }
   for (const inst of props.query.instances) {
@@ -83,10 +84,13 @@ function toggleFacetValue(field: keyof SearchQuery, value: string) {
   const current = props.query[field] as string[]
   if (field === 'sources') {
     const internal = SOURCE_DISPLAY_TO_INTERNAL[value] || value
-    if (current.includes(internal)) {
-      emit('change', { [field]: current.filter((v) => v !== internal) })
+    // Source filter: click = "show only this source"; click again = "show all"
+    if (current.length === 1 && current[0] === internal) {
+      // Already filtering to this source, restore both
+      emit('change', { [field]: ['ECHR', 'RS'] })
     } else {
-      emit('change', { [field]: [...current, internal] })
+      // Filter to only this source
+      emit('change', { [field]: [internal] })
     }
     return
   }
@@ -119,7 +123,7 @@ type FacetSection = {
   formatValue?: (v: string) => string
 }
 
-const sections = computed<FacetSection[]>(() =>
+const allSections = computed<FacetSection[]>(() =>
   ([
     { key: 'sources', label: 'Source', source: 'all' as SourceScope, items: props.facets.sources, field: 'sources' as keyof SearchQuery, activeValues: (props.query.sources?.length ?? 0) >= 2 ? [] : (props.query.sources || []).map((s) => SOURCE_INTERNAL_TO_DISPLAY[s] || s) },
     { key: 'documentTypes', label: 'Document Type', source: 'all' as SourceScope, items: props.facets.documentTypes, field: 'documentType' as keyof SearchQuery, activeValues: props.query.documentType },
@@ -133,6 +137,26 @@ const sections = computed<FacetSection[]>(() =>
     { key: 'domains', label: 'Legal Domain', source: 'RS' as SourceScope, items: props.facets.domains.slice(0, 10), field: 'domains' as keyof SearchQuery, activeValues: props.query.domains }
   ] as FacetSection[]).filter((s) => s.items.length > 0)
 )
+
+// Filter sections and their items based on the search text
+const sections = computed<FacetSection[]>(() => {
+  const q = filterSearch.value.trim().toLowerCase()
+  if (!q) return allSections.value
+
+  return allSections.value
+    .map((section) => {
+      // If section label matches, show the whole section
+      if (section.label.toLowerCase().includes(q)) return section
+      // Otherwise filter individual items
+      const filtered = section.items.filter((item) => {
+        const display = formatItemValue(section, item.value).toLowerCase()
+        return display.includes(q) || item.value.toLowerCase().includes(q)
+      })
+      if (filtered.length === 0) return null
+      return { ...section, items: filtered }
+    })
+    .filter((s): s is FacetSection => s !== null)
+})
 
 function getImportanceLabel(value: string): string {
   const labels: Record<string, string> = { '1': 'Key case', '2': 'Important', '3': 'Moderate', '4': 'Low importance' }
@@ -155,24 +179,54 @@ function formatItemValue(section: FacetSection, value: string): string {
 
 <template>
   <template v-if="collapsed">
-    <Button variant="outline" size="sm" class="gap-1.5 ml-4" @click="emit('toggleCollapse')">
-      <Filter class="h-3.5 w-3.5" />
+    <button
+      class="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition-all hover:text-foreground hover:bg-muted/50 ml-4"
+      @click="emit('toggleCollapse')"
+    >
+      <Filter class="h-3 w-3" />
       Filters
-    </Button>
+    </button>
   </template>
   <div v-else class="flex h-full w-full shrink-0 flex-col">
-    <div class="flex items-center justify-between mb-2 px-4">
-      <h3 class="text-sm font-semibold text-foreground flex items-center gap-1.5">
-        <Filter class="h-4 w-4" />
-        Filters
-      </h3>
-      <Button variant="ghost" size="sm" class="h-7 text-xs" @click="emit('toggleCollapse')">
-        Hide
-      </Button>
+    <!-- Header -->
+    <div class="flex items-center justify-between px-4 py-3">
+      <div class="flex items-center gap-2">
+        <Filter class="h-3.5 w-3.5 text-muted-foreground/70" />
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Filters</span>
+        <Badge v-if="activeFilters.length > 0" variant="secondary" class="text-[10px] h-4 px-1.5 tabular-nums">
+          {{ activeFilters.length }}
+        </Badge>
+      </div>
+      <button
+        class="text-[10px] font-medium text-muted-foreground/60 hover:text-foreground transition-colors"
+        @click="emit('toggleCollapse')"
+      >
+        <PanelLeftClose class="h-3.5 w-3.5" />
+      </button>
+    </div>
+
+    <!-- Search input -->
+    <div class="px-3 pb-2.5">
+      <div class="relative">
+        <Search class="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/50 pointer-events-none" />
+        <input
+          v-model="filterSearch"
+          type="text"
+          placeholder="Search filters..."
+          class="w-full rounded-md border border-border/60 bg-muted/20 py-1.5 pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-border focus:bg-background transition-colors"
+        />
+        <button
+          v-if="filterSearch"
+          class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+          @click="filterSearch = ''"
+        >
+          <X class="h-3 w-3" />
+        </button>
+      </div>
     </div>
 
     <!-- Active filter chips -->
-    <div v-if="activeFilters.length > 0" class="flex flex-wrap gap-1 pb-3 px-4">
+    <div v-if="activeFilters.length > 0" class="flex flex-wrap gap-1 pb-2.5 px-3">
       <Badge v-for="(chip, i) in activeFilters" :key="i" variant="secondary" class="gap-1 pr-1 text-[10px]">
         {{ chip.label }}
         <button class="ml-0.5 rounded-md hover:bg-muted-foreground/20" @click="chip.onremove()">
@@ -181,8 +235,13 @@ function formatItemValue(section: FacetSection, value: string): string {
       </Badge>
     </div>
 
-    <!-- Separator (always visible) -->
+    <!-- Separator -->
     <div class="h-px bg-border" />
+
+    <!-- No results for search -->
+    <div v-if="filterSearch && sections.length === 0" class="px-4 py-6 text-center">
+      <p class="text-xs text-muted-foreground/60">No filters match "{{ filterSearch }}"</p>
+    </div>
 
     <!-- Facet sections -->
     <div class="flex-1 overflow-y-auto pr-0 pb-16">
