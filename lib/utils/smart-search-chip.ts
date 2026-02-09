@@ -27,11 +27,6 @@ export function smartSearchChipClasses(
 			return `${ring} bg-teal-50/70 text-teal-700 ${variant === 'summary' ? 'border-teal-200/60' : 'ring-teal-200/60'} dark:bg-teal-950/35 dark:text-teal-200 ${variant === 'summary' ? 'dark:border-teal-800/50' : 'dark:ring-teal-800/50'}`;
 		case 'keyword':
 			return `${ring} bg-rose-50/70 text-rose-700 ${variant === 'summary' ? 'border-rose-200/60' : 'ring-rose-200/60'} dark:bg-rose-950/35 dark:text-rose-200 ${variant === 'summary' ? 'dark:border-rose-800/50' : 'dark:ring-rose-800/50'}`;
-		case 'degree_source':
-		case 'degree_target':
-		case 'degree_depth':
-		case 'subgraph':
-			return `${ring} bg-slate-50/70 text-slate-700 ${variant === 'summary' ? 'border-slate-200/60' : 'ring-slate-200/60'} dark:bg-slate-950/35 dark:text-slate-200 ${variant === 'summary' ? 'dark:border-slate-800/50' : 'dark:ring-slate-800/50'}`;
 		default:
 			return `${ring} bg-muted/60 text-foreground ${variant === 'summary' ? 'border-border/60' : 'ring-border/60'} dark:bg-muted/50 ${variant === 'summary' ? 'dark:border-border/80' : 'dark:ring-border/80'}`;
 	}

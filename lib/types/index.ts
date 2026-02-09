@@ -14,7 +14,6 @@ export type Citation = {
     procedure_type: string;
     url_publication: string;
     source: 'HUDOC' | 'Rechtspraak';
-    relevanceScore?: number;
     // ECHR-specific fields
     itemid?: string;
     language?: string;
@@ -115,13 +114,10 @@ export type SearchQuery = {
     dateJudgmentEnd?: string;
     dateDecisionStart?: string;
     dateDecisionEnd?: string;
-    sortBy: 'relevance' | 'date' | 'citations' | 'importance';
+    sortBy: 'date' | 'citations';
     sortDirection: 'asc' | 'desc';
     page: number;
     pageSize: number;
-    degreesSource: number;
-    degreesTarget: number;
-    isSubgraph: boolean;
     scoped: ScopedSearchFilters;
     queryBuilderGroup?: QueryBuilderGroup;
 };
@@ -130,6 +126,8 @@ export type SearchResult = {
     results: Citation[];
     total: number;
     totalIsExact: boolean;
+    rsTotal?: number;
+    echrTotal?: number;
     page: number;
     pageSize: number;
     facets: SearchFacets;
@@ -138,8 +136,6 @@ export type SearchResult = {
     aiSummary?: string;
     relatedSearches?: string[];
     didYouMean?: string;
-    edges?: ApiEdge[];
-    edgesPagination?: ApiEdgesPagination;
 };
 
 export type SearchFacets = {
@@ -198,10 +194,6 @@ export type ParsedTokenType =
     | 'date_decision_start'
     | 'date_decision_end'
     | 'date_decision_exact'
-    | 'degree_source'
-    | 'degree_target'
-    | 'degree_depth'
-    | 'subgraph'
     | 'document_type'
     | 'importance'
     | 'instance'
@@ -253,18 +245,17 @@ export type ApiPagination = {
     nextCursor?: string;
 };
 
-export type ApiEdgesPagination = {
-    pageSize: number;
-    nextCursor?: string;
-    total?: number;
-};
-
 export type ApiNetworkResponse = {
     nodes: ApiNode[];
     edges: ApiEdge[];
     message?: string;
     pagination?: ApiPagination;
-    edgesPagination?: ApiEdgesPagination;
+};
+
+export type ExpandResult = {
+    nodeId: string;
+    edges: ApiEdge[];
+    expandedNodes: ApiNode[];
 };
 
 export function createDefaultSearchQuery(): SearchQuery {
@@ -291,13 +282,10 @@ export function createDefaultSearchQuery(): SearchQuery {
         dateJudgmentEnd: undefined,
         dateDecisionStart: undefined,
         dateDecisionEnd: undefined,
-        sortBy: 'relevance',
+        sortBy: 'date',
         sortDirection: 'desc',
         page: 1,
-        pageSize: 100,
-        degreesSource: 0,
-        degreesTarget: 0,
-        isSubgraph: false,
+        pageSize: 50,
         scoped: {
             echr: {
                 text: '',

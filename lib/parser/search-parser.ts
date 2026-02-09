@@ -5,7 +5,6 @@ import { recognizeApplicationNumbers } from './recognizers/application-recognize
 import { recognizeStates } from './recognizers/state-recognizer';
 import { recognizeSources } from './recognizers/source-recognizer';
 import { recognizeExplicitFields } from './recognizers/explicit-field-recognizer';
-import { recognizeDegrees } from './recognizers/degree-recognizer';
 import { recognizeMetadata } from './recognizers/metadata-recognizer';
 import { recognizeDates } from './recognizers/date-recognizer';
 import type { ParseResult, ParsedToken, ParseSuggestion } from '~/lib/types';
@@ -41,15 +40,14 @@ function removeSpans(input: string, spans: [number, number][]): string {
  *
  * Runs recognizers in priority order:
  * 1. Explicit field patterns (title, language, explicit dates, etc.)
- * 2. Graph degrees (degree source/target, depth)
- * 3. Keywords (quoted phrases)
- * 4. ECLI
- * 5. Articles (most complex, highest priority)
- * 6. Application numbers
- * 7. States (multi-word country names)
- * 8. Sources (ECHR/Rechtspraak)
- * 9. Metadata (doc types, importance, instances, domains)
- * 10. Dates (years, ranges)
+ * 2. Keywords (quoted phrases)
+ * 3. ECLI
+ * 4. Articles (most complex, highest priority)
+ * 5. Application numbers
+ * 6. States (multi-word country names)
+ * 7. Sources (ECHR/Rechtspraak)
+ * 8. Metadata (doc types, importance, instances, domains)
+ * 9. Dates (years, ranges)
  *
  * Each recognizer receives a masked version of the input where
  * previously consumed spans are replaced with spaces.
@@ -65,63 +63,56 @@ export function parseSearchInput(input: string): ParseResult {
     allSuggestions.push(...explicit.suggestions);
     allConsumed.push(...explicit.consumed);
 
-    // 2. Graph degrees (source/target/depth)
+    // 2. Keywords (quoted phrases)
     let masked = maskSpans(input, allConsumed);
-    const degrees = recognizeDegrees(masked);
-    allTokens.push(...degrees.tokens);
-    allSuggestions.push(...degrees.suggestions);
-    allConsumed.push(...degrees.consumed);
-
-    // 3. Keywords (quoted phrases)
-    masked = maskSpans(input, allConsumed);
     const keywords = recognizeKeywords(masked);
     allTokens.push(...keywords.tokens);
     allSuggestions.push(...keywords.suggestions);
     allConsumed.push(...keywords.consumed);
 
-    // 4. ECLI
+    // 3. ECLI
     masked = maskSpans(input, allConsumed);
     const eclis = recognizeEcli(masked);
     allTokens.push(...eclis.tokens);
     allSuggestions.push(...eclis.suggestions);
     allConsumed.push(...eclis.consumed);
 
-    // 5. Articles
+    // 4. Articles
     masked = maskSpans(input, allConsumed);
     const articles = recognizeArticles(masked);
     allTokens.push(...articles.tokens);
     allSuggestions.push(...articles.suggestions);
     allConsumed.push(...articles.consumed);
 
-    // 6. Application numbers
+    // 5. Application numbers
     masked = maskSpans(input, allConsumed);
     const apps = recognizeApplicationNumbers(masked);
     allTokens.push(...apps.tokens);
     allSuggestions.push(...apps.suggestions);
     allConsumed.push(...apps.consumed);
 
-    // 7. States (on masked input)
+    // 6. States (on masked input)
     masked = maskSpans(input, allConsumed);
     const states = recognizeStates(masked);
     allTokens.push(...states.tokens);
     allSuggestions.push(...states.suggestions);
     allConsumed.push(...states.consumed);
 
-    // 8. Sources
+    // 7. Sources
     masked = maskSpans(input, allConsumed);
     const sources = recognizeSources(masked);
     allTokens.push(...sources.tokens);
     allSuggestions.push(...sources.suggestions);
     allConsumed.push(...sources.consumed);
 
-    // 9. Metadata
+    // 8. Metadata
     masked = maskSpans(input, allConsumed);
     const metadata = recognizeMetadata(masked);
     allTokens.push(...metadata.tokens);
     allSuggestions.push(...metadata.suggestions);
     allConsumed.push(...metadata.consumed);
 
-    // 10. Dates
+    // 9. Dates
     masked = maskSpans(input, allConsumed);
     const dates = recognizeDates(masked);
     allTokens.push(...dates.tokens);

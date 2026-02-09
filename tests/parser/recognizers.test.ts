@@ -7,8 +7,6 @@ import { recognizeMetadata } from '../../lib/parser/recognizers/metadata-recogni
 import { recognizeDates } from '../../lib/parser/recognizers/date-recognizer';
 import { recognizeEcli } from '../../lib/parser/recognizers/ecli-recognizer';
 import { recognizeApplicationNumbers } from '../../lib/parser/recognizers/application-recognizer';
-import { recognizeDegrees } from '../../lib/parser/recognizers/degree-recognizer';
-
 describe('recognizers', () => {
   it('extracts quoted keywords with cleaned casing', () => {
     const input = 'Find "right to life" and "  freedom   of expression " cases';
@@ -107,21 +105,4 @@ describe('recognizers', () => {
     expect(nl.suggestions[0].token.value).toBe('76543/21');
   });
 
-  it('detects graph degrees and subgraph mode', () => {
-    const result = recognizeDegrees('degree source 2 and degree target 3 subgraph');
-    const types = result.suggestions.map((s) => s.token.type);
-    expect(types).toContain('degree_source');
-    expect(types).toContain('degree_target');
-    expect(types).toContain('subgraph');
-
-    const depth = recognizeDegrees('depth 2');
-    expect(depth.suggestions[0].token.type).toBe('degree_depth');
-    expect(depth.suggestions[0].token.value).toBe('2');
-
-    const breadth = recognizeDegrees('breadth 3');
-    expect(breadth.suggestions[0].token.type).toBe('degree_source');
-
-    const target = recognizeDegrees('target degree 4');
-    expect(target.suggestions[0].token.type).toBe('degree_target');
-  });
 });

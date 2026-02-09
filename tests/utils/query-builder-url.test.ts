@@ -20,7 +20,7 @@ describe('query-builder URL utils', () => {
       ]
     };
 
-    const params = queryBuilderGroupToParams(group, { pageSize: 100, cursor: 'abc', searchString: 'test', sortBy: 'date', sortDirection: 'asc', page: 3 });
+    const params = queryBuilderGroupToParams(group, { pageSize: 50, cursor: 'abc', searchString: 'test', sortBy: 'citations', sortDirection: 'asc', page: 3 });
     const parsed = paramsToQueryBuilderState(params);
     expect(parsed.state).toBeTruthy();
     expect(parsed.state?.group.rules.length).toBeGreaterThan(0);
@@ -28,7 +28,7 @@ describe('query-builder URL utils', () => {
     expect(parsed.state?.pageSize).toBeUndefined();
     expect(parsed.state?.cursor).toBe('abc');
     expect(parsed.state?.searchString).toBe('test');
-    expect(parsed.state?.sortBy).toBe('date');
+    expect(parsed.state?.sortBy).toBe('citations');
     expect(parsed.state?.sortDirection).toBe('asc');
     expect(parsed.state?.page).toBe(3);
   });

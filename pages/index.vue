@@ -59,9 +59,6 @@ function navigateToResults() {
 	submitError.value = null;
 	const nextQuery = {
 		...parsed.query,
-		degreesSource: smartSearch.degreesSource.value,
-		degreesTarget: smartSearch.degreesTarget.value,
-		isSubgraph: smartSearch.isSubgraph.value,
 		queryBuilderGroup: smartSearch.queryBuilderGroup.value,
 	};
 	store.setQuery(nextQuery);
@@ -81,9 +78,6 @@ function navigateToResults() {
 				sortBy: nextQuery.sortBy,
 				sortDirection: nextQuery.sortDirection,
 				page: nextQuery.page,
-				degreesSource: nextQuery.degreesSource,
-				degreesTarget: nextQuery.degreesTarget,
-				isSubgraph: nextQuery.isSubgraph,
 			},
 		);
 	router.push({
@@ -159,38 +153,16 @@ onMounted(() => {
 		page: parsed.state.page || result.query.page,
 		sortBy: parsed.state.sortBy || result.query.sortBy,
 		sortDirection: parsed.state.sortDirection || result.query.sortDirection,
-		degreesSource:
-			parsed.state.degreesSource !== undefined
-				? parsed.state.degreesSource
-				: result.query.degreesSource,
-		degreesTarget:
-			parsed.state.degreesTarget !== undefined
-				? parsed.state.degreesTarget
-				: result.query.degreesTarget,
-		isSubgraph:
-			parsed.state.isSubgraph !== undefined
-				? parsed.state.isSubgraph
-				: result.query.isSubgraph,
 	};
 
 	if (parsed.state.searchString) {
 		smartSearch.setFromText(parsed.state.searchString);
 		smartSearch.onQueryBuilderEdit(group);
 		smartSearch.setSearchString(parsed.state.searchString);
-		smartSearch.setDegrees({
-			source: nextQuery.degreesSource,
-			target: nextQuery.degreesTarget,
-			isSubgraph: nextQuery.isSubgraph,
-		});
 	} else {
 		smartSearch.setFromText("");
 		smartSearch.onQueryBuilderEdit(group);
 		smartSearch.setSearchString("");
-		smartSearch.setDegrees({
-			source: nextQuery.degreesSource,
-			target: nextQuery.degreesTarget,
-			isSubgraph: nextQuery.isSubgraph,
-		});
 	}
 	store.setQuery({ ...nextQuery, queryBuilderGroup: group });
 	submitError.value = null;

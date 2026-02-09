@@ -128,9 +128,6 @@ const segments = ref<SmartSegment[]>([]);
 const suggestions = ref<ParseSuggestion[]>([]);
 const allSuggestions = ref<ParseSuggestion[]>([]);
 const acceptedTokens = ref<ParsedToken[]>([]);
-const degreesSource = ref(0);
-const degreesTarget = ref(0);
-const isSubgraph = ref(false);
 const queryBuilderGroup = ref<QueryBuilderGroup>({
     id: 'root',
     operator: 'AND',
@@ -158,11 +155,6 @@ function runParse() {
         acceptedSuggestionTriggers.clear();
         acceptedTokensByKey.clear();
         acceptedTokens.value = [];
-        if (lastEditSource.value === 'searchbar') {
-            degreesSource.value = 0;
-            degreesTarget.value = 0;
-            isSubgraph.value = false;
-        }
         syncQueryBuilder();
         return;
     }
@@ -171,9 +163,6 @@ function runParse() {
     updateAcceptedForText(text);
 
     const result = parseSearchInput(text);
-    if (lastEditSource.value === 'searchbar') {
-        applyDegreesFromTokens(result.tokens);
-    }
     allSuggestions.value = result.suggestions;
     suggestions.value = result.suggestions.filter((s) => {
         const key = suggestionKey(s);
@@ -339,11 +328,7 @@ function removeToken(tokenId: string) {
 }
 
 function buildSearchQuery(): SearchQuery {
-    const query = tokensToSearchQuery(getAllTokens(), '');
-    query.degreesSource = degreesSource.value;
-    query.degreesTarget = degreesTarget.value;
-    query.isSubgraph = isSubgraph.value;
-    return query;
+    return tokensToSearchQuery(getAllTokens(), '');
 }
 
 function clearAll() {
@@ -359,9 +344,6 @@ function clearAll() {
     lastWordCount.value = 0;
     lastEditSource.value = 'searchbar';
     searchString.value = '';
-    degreesSource.value = 0;
-    degreesTarget.value = 0;
-    isSubgraph.value = false;
     syncQueryBuilder();
 }
 
@@ -411,9 +393,6 @@ function setFromSearchQuery(query: SearchQuery) {
     lastWordCount.value = 0;
     lastEditSource.value = 'searchbar';
     searchString.value = '';
-    degreesSource.value = normalizeDegree(query.degreesSource);
-    degreesTarget.value = normalizeDegree(query.degreesTarget);
-    isSubgraph.value = !!query.isSubgraph;
 }
 
 function onQueryBuilderEdit(group: QueryBuilderGroup) {
@@ -423,13 +402,6 @@ function onQueryBuilderEdit(group: QueryBuilderGroup) {
 
 function setSearchString(value: string) {
     searchString.value = normalizeWhitespace(value || '');
-}
-
-function setDegrees(next: { source?: number; target?: number; isSubgraph?: boolean }, source: 'searchbar' | 'querybuilder' = 'querybuilder') {
-    if (typeof next.source === 'number') degreesSource.value = normalizeDegree(next.source);
-    if (typeof next.target === 'number') degreesTarget.value = normalizeDegree(next.target);
-    if (typeof next.isSubgraph === 'boolean') isSubgraph.value = next.isSubgraph;
-    lastEditSource.value = source;
 }
 
 export function useSmartSearch() {
@@ -459,9 +431,6 @@ export function useSmartSearch() {
         ),
         queryBuilderGroup,
         lastEditSource,
-        degreesSource: computed(() => degreesSource.value),
-        degreesTarget: computed(() => degreesTarget.value),
-        isSubgraph: computed(() => isSubgraph.value),
         onSegmentsChange,
         acceptSuggestion,
         acceptSuggestionSoft,
@@ -476,58 +445,7 @@ export function useSmartSearch() {
         setFromSearchQuery,
         onQueryBuilderEdit,
         setSearchString,
-        setDegrees
     };
-}
-
-function normalizeDegree(value: number | undefined): number {
-    if (typeof value !== 'number' || !Number.isInteger(value)) return 0;
-    if (value < 0) return 0;
-    if (value > 5) return 5;
-    return value;
-}
-
-function applyDegreesFromTokens(tokens: ParsedToken[]) {
-    let nextSource: number | null = null;
-    let nextTarget: number | null = null;
-    let nextSubgraph: boolean | null = null;
-    let found = false;
-
-    for (const token of tokens) {
-        if (token.type === 'degree_source') {
-            const value = normalizeDegree(Number(token.value));
-            nextSource = value;
-            found = true;
-        }
-        if (token.type === 'degree_target') {
-            const value = normalizeDegree(Number(token.value));
-            nextTarget = value;
-            found = true;
-        }
-        if (token.type === 'degree_depth') {
-            const value = normalizeDegree(Number(token.value));
-            nextSource = value;
-            nextTarget = value;
-            found = true;
-        }
-        if (token.type === 'subgraph') {
-            nextSubgraph = true;
-            found = true;
-        }
-    }
-
-    if (!found) {
-        degreesSource.value = 0;
-        degreesTarget.value = 0;
-        isSubgraph.value = false;
-        return;
-    }
-
-    degreesSource.value = nextSource ?? 0;
-    degreesTarget.value = nextTarget ?? 0;
-    if (nextSubgraph !== null) {
-        isSubgraph.value = nextSubgraph;
-    }
 }
 
 function suggestionKey(suggestion: ParseSuggestion): string {

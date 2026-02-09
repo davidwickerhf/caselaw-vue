@@ -401,7 +401,6 @@ function suggestionTypeFromToken(token: ParsedToken) {
   if (token.type === 'respondent_state') return 'state'
   if (token.type === 'year' || token.type === 'date_start' || token.type === 'date_end') return 'date'
   if (token.type === 'document_type') return 'document'
-  if (token.type === 'degree_source' || token.type === 'degree_target' || token.type === 'degree_depth' || token.type === 'subgraph') return 'graph'
   return 'tag'
 }
 

@@ -7,20 +7,11 @@ import { createDefaultSearchQuery } from '~/lib/types'
 
 const props = defineProps<{
   group: QueryBuilderGroup
-  degreesSource?: number
-  degreesTarget?: number
-  isSubgraph?: boolean
 }>()
 
 const payload = computed(() => {
   const defaults = createDefaultSearchQuery()
-  const query = {
-    ...defaults,
-    degreesSource: props.degreesSource ?? defaults.degreesSource,
-    degreesTarget: props.degreesTarget ?? defaults.degreesTarget,
-    isSubgraph: props.isSubgraph ?? defaults.isSubgraph
-  }
-  const body = buildCombinedPayload(query, props.group, defaults.pageSize)
+  const body = buildCombinedPayload(defaults, props.group, defaults.pageSize)
   return { json: JSON.stringify(body, null, 2), error: '' }
 })
 

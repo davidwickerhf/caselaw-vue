@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Brackets, Code, RotateCcw, Check, Copy, GitBranch } from 'lucide-vue-next'
+import { Brackets, Code, RotateCcw, Check, Copy } from 'lucide-vue-next'
 import Button from '~/components/ui/button/Button.vue'
 import QueryBuilderGroupComp from './QueryBuilderGroup.vue'
 import { useSmartSearch } from '~/composables/useSmartSearch'
@@ -31,11 +31,7 @@ const emit = defineEmits<{
 const isOpen = defineModel<boolean>('open', { default: false })
 
 const queryPreview = computed(() =>
-  buildQuerySummarySegments(smartSearch.queryBuilderGroup.value, {
-    degreesSource: smartSearch.degreesSource.value,
-    degreesTarget: smartSearch.degreesTarget.value,
-    isSubgraph: smartSearch.isSubgraph.value
-  })
+  buildQuerySummarySegments(smartSearch.queryBuilderGroup.value)
     .map((seg) => seg.text)
     .join('')
     .trim()
@@ -82,23 +78,6 @@ const ruleCount = computed(() => {
     return n
   }
   return count(smartSearch.queryBuilderGroup.value)
-})
-
-const degreeOptions = [0, 1, 2, 3, 4, 5]
-
-const degreeSourceValue = computed({
-  get: () => smartSearch.degreesSource.value,
-  set: (value: number | string) => smartSearch.setDegrees({ source: Number(value) }, 'querybuilder')
-})
-
-const degreeTargetValue = computed({
-  get: () => smartSearch.degreesTarget.value,
-  set: (value: number | string) => smartSearch.setDegrees({ target: Number(value) }, 'querybuilder')
-})
-
-const subgraphValue = computed({
-  get: () => smartSearch.isSubgraph.value,
-  set: (value: boolean) => smartSearch.setDegrees({ isSubgraph: value }, 'querybuilder')
 })
 
 function handleChange() {
@@ -183,40 +162,6 @@ async function copyPreview() {
           :depth="0"
           @change="handleChange"
         />
-
-        <div class="mt-4 rounded-lg border border-border/50 bg-muted/20 p-3">
-          <div class="flex items-center gap-2 mb-2">
-            <GitBranch class="h-3.5 w-3.5 text-muted-foreground/70" />
-            <span class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Graph expansion</span>
-          </div>
-          <div class="grid gap-3 sm:grid-cols-3 items-end">
-            <div class="space-y-1">
-              <label class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Breadth (source)</label>
-              <select
-                v-model="degreeSourceValue"
-                class="h-8 w-full rounded-lg border border-border/50 bg-background px-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
-              >
-                <option v-for="opt in degreeOptions" :key="`ds-${opt}`" :value="opt">{{ opt }}</option>
-              </select>
-            </div>
-            <div class="space-y-1">
-              <label class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Target degree</label>
-              <select
-                v-model="degreeTargetValue"
-                class="h-8 w-full rounded-lg border border-border/50 bg-background px-2 text-[11px] font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all"
-              >
-                <option v-for="opt in degreeOptions" :key="`dt-${opt}`" :value="opt">{{ opt }}</option>
-              </select>
-            </div>
-            <label class="flex items-center gap-2 rounded-lg border border-border/50 bg-background px-3 py-2 text-[11px] font-medium text-muted-foreground/80 hover:text-foreground">
-              <input v-model="subgraphValue" type="checkbox" class="h-3.5 w-3.5 rounded border-border/60 text-primary focus:ring-primary/30" />
-              Subgraph only
-            </label>
-          </div>
-          <p class="mt-2 text-[11px] text-muted-foreground/70">
-            Degrees expand citation edges per dataset. Subgraph restricts edges to results in the current page.
-          </p>
-        </div>
 
         <!-- Preview -->
         <div v-if="queryPreview" class="mt-4 rounded-lg bg-muted/40 border border-border/40 p-3">

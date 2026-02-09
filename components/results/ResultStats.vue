@@ -6,6 +6,8 @@ import AiBadge from '~/components/shared/AiBadge.vue'
 defineProps<{
   total: number
   totalIsExact?: boolean
+  rsTotal?: number
+  echrTotal?: number
   hasMore?: boolean
   loadingMore?: boolean
   aiSummary?: string
@@ -33,6 +35,9 @@ const summaryExpanded = ref(false)
           <span class="font-semibold text-foreground">{{ total }}+</span>
           results found
         </template>
+        <span v-if="rsTotal != null && echrTotal != null" class="text-muted-foreground">
+          ({{ rsTotal }} Rechtspraak · {{ echrTotal }} ECHR)
+        </span>
         <span v-if="loadingMore" class="inline-flex items-center gap-1 text-xs text-muted-foreground">
           <Loader2 class="h-3 w-3 animate-spin" />
           loading more...

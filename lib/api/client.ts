@@ -1,15 +1,26 @@
-import type { Citation, SearchQuery, ApiNetworkResponse, ApiNode, QueryBuilderGroup, ApiEdge, ApiEdgesPagination, SourceScope } from '~/lib/types';
+import type { Citation, SearchQuery, ApiNode, QueryBuilderGroup, ApiEdge, SourceScope, ExpandResult } from '~/lib/types';
 import { respondentCodeToName, respondentStateToCode } from '~/lib/utils/respondent-state';
 import { defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
 import { RECHTSPRAAK_DOMAIN_ALIASES, RECHTSPRAAK_DOMAINS } from '~/lib/utils/constants';
 
 const API_BASE = 'http://localhost:3000';
 
-const DEFAULT_PAGE_SIZE = 100;
-const DEFAULT_EDGE_PAGE_SIZE = 1000;
+const DEFAULT_PAGE_SIZE = 50;
 
 type CombinedNode = ApiNode & { data: Record<string, unknown> & { dataset?: string; isResult?: string | boolean } };
-type CombinedResponse = ApiNetworkResponse & { edges?: ApiEdge[]; edgesPagination?: ApiEdgesPagination };
+type CombinedResponse = {
+    nodes: ApiNode[];
+    pagination?: {
+        pageSize: number;
+        nextCursor?: string | null;
+        total: number;
+        rsTotal: number;
+        echrTotal: number;
+    };
+    facets?: Record<string, Array<{ value: string | number; count: number }>>;
+    warnings?: string[];
+    message?: string;
+};
 
 const RS_DOC_TYPES = new Set(['DEC', 'OPI']);
 const ECHR_DOC_TYPES = new Set(['HEJUD', 'HEDEC', 'HECOM', 'HEINF', 'HECJUD', 'HECDEC', 'HECCOM', 'HECINF']);
@@ -221,8 +232,8 @@ function transformEchrNode(node: ApiNode): Citation {
         instance: '',
         domain: '',
         domains: [],
-        nCited: citedBy.length,
-        nCiting: cites.length,
+        nCited: typeof d.cited_by_count === 'number' ? d.cited_by_count : citedBy.length,
+        nCiting: typeof d.cites_count === 'number' ? d.cites_count : cites.length,
         topics: '',
         document_type: (d.document_type as string) || '',
         procedure_type: '',
@@ -269,8 +280,8 @@ function transformNetworkNode(node: ApiNode): Citation {
         instance: (d.instance as string) || '',
         domain: rawDomains[0] || '',
         domains: rawDomains,
-        nCited: citedBy.length,
-        nCiting: cites.length,
+        nCited: typeof d.cited_by_count === 'number' ? d.cited_by_count : citedBy.length,
+        nCiting: typeof d.cites_count === 'number' ? d.cites_count : cites.length,
         topics: '',
         document_type: (d.document_type as string) || '',
         procedure_type: (d.procedure_type as string) || '',
@@ -293,8 +304,9 @@ export type PageResult = {
     nextCursor?: string;
     total?: number;
     totalIsExact?: boolean;
-    edges?: ApiEdge[];
-    edgesPagination?: ApiEdgesPagination;
+    rsTotal?: number;
+    echrTotal?: number;
+    facets?: Record<string, Array<{ value: string | number; count: number }>>;
 };
 
 /**
@@ -305,22 +317,10 @@ export function buildCombinedPayload(
     group: QueryBuilderGroup,
     pageSize = DEFAULT_PAGE_SIZE,
     cursor?: string,
-    edgesCursor?: string
 ) {
-    const sortBy = query.sortBy === 'relevance' ? 'relevance' : 'date';
-    const payload: {
-        queryBuilder: ReturnType<typeof serializeQueryBuilder>;
-        degreesSource: number;
-        degreesTarget: number;
-        isSubgraph: boolean;
-        sort: { by: 'date' | 'relevance'; direction: 'asc' | 'desc' };
-        pagination: { pageSize: number; cursor?: string };
-        edgesPagination?: { pageSize: number; cursor?: string };
-    } = {
+    const sortBy = query.sortBy === 'citations' ? 'citations' : 'date';
+    return {
         queryBuilder: serializeQueryBuilder(group),
-        degreesSource: query.degreesSource ?? 0,
-        degreesTarget: query.degreesTarget ?? 0,
-        isSubgraph: query.isSubgraph ?? false,
         sort: {
             by: sortBy,
             direction: query.sortDirection || 'desc'
@@ -330,15 +330,6 @@ export function buildCombinedPayload(
             cursor: cursor || undefined
         }
     };
-
-    if ((query.degreesSource ?? 0) > 0 || (query.degreesTarget ?? 0) > 0) {
-        payload.edgesPagination = {
-            pageSize: DEFAULT_EDGE_PAGE_SIZE,
-            cursor: edgesCursor || undefined
-        };
-    }
-
-    return payload;
 }
 
 export async function fetchCombinedPage(
@@ -375,69 +366,49 @@ export async function fetchCombinedPage(
         const citation = dataset === 'ECHR'
             ? transformEchrNode(node)
             : transformNetworkNode(node);
-        const relevanceScore = typeof node.data.relevanceScore === 'number' ? node.data.relevanceScore : undefined;
-        return relevanceScore !== undefined ? { ...citation, relevanceScore } : citation;
+        return citation;
     });
 
-    const total =
-        (typeof (result as { total?: unknown }).total === 'number' ? (result as { total: number }).total : undefined) ??
-        (typeof (result.pagination as { total?: unknown } | undefined)?.total === 'number'
-            ? (result.pagination as { total: number }).total
-            : undefined) ??
-        (typeof (result.pagination as { totalCount?: unknown } | undefined)?.totalCount === 'number'
-            ? (result.pagination as { totalCount: number }).totalCount
-            : undefined);
-
-    const totalIsExact =
-        (typeof (result as { totalIsExact?: unknown }).totalIsExact === 'boolean'
-            ? (result as { totalIsExact: boolean }).totalIsExact
-            : undefined) ??
-        (typeof (result.pagination as { totalIsExact?: unknown } | undefined)?.totalIsExact === 'boolean'
-            ? (result.pagination as { totalIsExact: boolean }).totalIsExact
-            : undefined) ??
-        (total !== undefined ? true : undefined);
-
-    const edges: ApiEdge[] = Array.isArray(result.edges) ? [...result.edges] : [];
-    let edgesPagination = result.edgesPagination;
-
-    if (edgesPagination?.nextCursor) {
-        let edgeCursor = edgesPagination.nextCursor;
-        const seen = new Set<string>(edges.map((edge) => edge.id));
-        while (edgeCursor) {
-            const edgePayload = buildCombinedPayload(query, group, pageSize, cursor, edgeCursor);
-            const edgeResponse = await fetch(`${API_BASE}/api/combined`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(edgePayload),
-                signal
-            });
-            if (!edgeResponse.ok) {
-                const errorText = await edgeResponse.text();
-                throw new Error(`Combined API error (${edgeResponse.status}): ${errorText}`);
-            }
-            const edgeData = (await edgeResponse.json()) as CombinedResponse;
-            if (edgeData.error) {
-                throw new Error(`Combined API: ${edgeData.error}`);
-            }
-            const nextEdges = Array.isArray(edgeData.edges) ? edgeData.edges : [];
-            for (const edge of nextEdges) {
-                if (edge.id && seen.has(edge.id)) continue;
-                if (edge.id) seen.add(edge.id);
-                edges.push(edge);
-            }
-            edgeCursor = edgeData.edgesPagination?.nextCursor;
-            edgesPagination = edgeData.edgesPagination || edgesPagination;
-        }
-    }
+    const total = result.pagination?.total ??
+        (typeof (result as unknown as { total?: unknown }).total === 'number' ? (result as unknown as { total: number }).total : undefined);
 
     return {
         citations,
-        nextCursor: result.pagination?.nextCursor,
+        nextCursor: result.pagination?.nextCursor ?? undefined,
         total,
-        totalIsExact,
-        edges,
-        edgesPagination
+        totalIsExact: total !== undefined ? true : undefined,
+        rsTotal: result.pagination?.rsTotal,
+        echrTotal: result.pagination?.echrTotal,
+        facets: result.facets,
     };
+}
+
+/**
+ * Expand a single node's degree-1 citations via the expand endpoint.
+ */
+export async function fetchExpandNode(
+    nodeId: string,
+    options?: { degreesSource?: 0 | 1; degreesTarget?: 0 | 1; nodeDataset?: 'ECHR' | 'RS' },
+    signal?: AbortSignal
+): Promise<ExpandResult> {
+    const body: Record<string, unknown> = { nodeId };
+    if (options?.degreesSource) body.degreesSource = options.degreesSource;
+    if (options?.degreesTarget) body.degreesTarget = options.degreesTarget;
+    if (options?.nodeDataset) body.nodeDataset = options.nodeDataset;
+
+    const response = await fetch(`${API_BASE}/api/combined/expand`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Expand API error (${response.status}): ${errorText}`);
+    }
+
+    return await response.json();
 }
 
 export { DEFAULT_PAGE_SIZE };

@@ -10,7 +10,6 @@ import {
 import { onBeforeRouteLeave } from "vue-router";
 import {
 	Loader2,
-	AlertCircle,
 	Filter,
 	Brackets,
 	ArrowLeft,
@@ -66,7 +65,6 @@ const smartSearch = useSmartSearch();
 
 const viewMode = ref<"compact" | "expanded">("expanded");
 const filtersCollapsed = ref(false);
-const routeError = ref<string | null>(null);
 const syncingRoute = ref(false);
 const syncingSmartSearch = ref(false);
 const queryBuilderOpen = ref(false);
@@ -75,11 +73,7 @@ const summaryText = computed(() =>
 	summarySegments.value.map((seg) => seg.text).join(""),
 );
 const summarySegments = computed(() =>
-	buildQuerySummarySegments(smartSearch.queryBuilderGroup.value, {
-		degreesSource: smartSearch.degreesSource.value,
-		degreesTarget: smartSearch.degreesTarget.value,
-		isSubgraph: smartSearch.isSubgraph.value,
-	}),
+	buildQuerySummarySegments(smartSearch.queryBuilderGroup.value),
 );
 const marqueeRef = ref<HTMLElement | null>(null);
 const summaryRowRef = ref<HTMLElement | null>(null);
@@ -101,14 +95,8 @@ function getRuleScope(rule: QueryBuilderGroup["rules"][number]): SourceScope {
 		: defaultScopeForField(rule.field);
 }
 
-function buildAppliedSignature(
-	group: QueryBuilderGroup,
-	meta: { degreesSource: number; degreesTarget: number; isSubgraph: boolean },
-) {
-	return JSON.stringify({
-		group,
-		meta,
-	});
+function buildAppliedSignature(group: QueryBuilderGroup) {
+	return JSON.stringify({ group });
 }
 
 function getFieldLabel(field: string, scope: SourceScope): string {
@@ -133,44 +121,6 @@ function formatRule(rule: QueryBuilderGroup["rules"][number]): string {
 	return `${scopeLabel}: ${fieldLabel} ${opLabel} ${valueText}`;
 }
 
-const scopeConflictDetails = computed(() => {
-	const error = store.error.value;
-	if (!error) return null;
-	if (!error.includes("No applicable rules for RS or ECHR after scope filtering")) {
-		return null;
-	}
-	const rules = [
-		...smartSearch.queryBuilderGroup.value.rules,
-		...smartSearch.queryBuilderGroup.value.groups.flatMap((g) => g.rules),
-	].filter((rule) => rule.value && rule.value.trim());
-	const echrRules: QueryBuilderGroup["rules"][number][] = [];
-	const rsRules: QueryBuilderGroup["rules"][number][] = [];
-	const commonRules: QueryBuilderGroup["rules"][number][] = [];
-
-	for (const rule of rules) {
-		const scope = getRuleScope(rule);
-		if (scope === "ECHR") echrRules.push(rule);
-		else if (scope === "RS") rsRules.push(rule);
-		else commonRules.push(rule);
-	}
-	if (!echrRules.length || !rsRules.length) return null;
-
-	const renderGroup = (items: QueryBuilderGroup["rules"][number][]) =>
-		items.length > 1
-			? `(${items.map(formatRule).join(" AND ")})`
-			: items.map(formatRule).join(" AND ");
-	const orGroup = `${renderGroup(echrRules)} OR ${renderGroup(rsRules)}`;
-	const fix = commonRules.length
-		? `(${orGroup}) AND ${commonRules.map(formatRule).join(" AND ")}`
-		: `(${orGroup})`;
-
-	return {
-		echrRules: echrRules.map(formatRule),
-		rsRules: rsRules.map(formatRule),
-		commonRules: commonRules.map(formatRule),
-		fix,
-	};
-});
 const ruleIndex = computed(() => {
 	const map = new Map<string, QueryBuilderGroup["rules"][number]>();
 	const add = (group: QueryBuilderGroup) => {
@@ -391,10 +341,6 @@ function invalidKey(ruleId: string, editType: "scope" | "value") {
 	return `${ruleId}:${editType}`;
 }
 
-function invalidMetaKey(metaKey: string) {
-	return `meta:${metaKey}`;
-}
-
 function setInvalid(
 	ruleId: string,
 	editType: "scope" | "value",
@@ -402,17 +348,6 @@ function setInvalid(
 ) {
 	const next = new Set(invalidRuleKeys.value);
 	const key = invalidKey(ruleId, editType);
-	if (message) {
-		next.add(key);
-	} else {
-		next.delete(key);
-	}
-	invalidRuleKeys.value = next;
-}
-
-function setInvalidMeta(metaKey: string, message: string | null) {
-	const next = new Set(invalidRuleKeys.value);
-	const key = invalidMetaKey(metaKey);
 	if (message) {
 		next.add(key);
 	} else {
@@ -599,38 +534,6 @@ function validateRuleValue(
 	}
 }
 
-function validateMetaValue(
-	metaKey: string,
-	value: string,
-): { valid: boolean; normalized?: string; message?: string } {
-	const normalized = normalizeSummaryValue(value);
-	if (metaKey === "degree_source" || metaKey === "degree_target") {
-		const num = Number(normalized);
-		if (!Number.isInteger(num) || num < 0 || num > 5) {
-			return { valid: false, message: "Degree must be an integer between 0 and 5." };
-		}
-		return { valid: true, normalized: String(num) };
-	}
-	if (metaKey === "subgraph") {
-		const lower = normalized.toLowerCase();
-		if (["on", "true", "yes", "1"].includes(lower)) {
-			return { valid: true, normalized: "on" };
-		}
-		if (["off", "false", "no", "0"].includes(lower)) {
-			return { valid: true, normalized: "off" };
-		}
-		return { valid: false, message: 'Use "on" or "off" for subgraph.' };
-	}
-	return { valid: false, message: "Unknown setting." };
-}
-
-function metaDisplayValue(metaKey: string): string {
-	if (metaKey === "degree_source") return String(smartSearch.degreesSource.value);
-	if (metaKey === "degree_target") return String(smartSearch.degreesTarget.value);
-	if (metaKey === "subgraph") return smartSearch.isSubgraph.value ? "on" : "off";
-	return "";
-}
-
 function parseDateValue(value: string): number | null {
 	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
 	const parsed = new Date(value);
@@ -772,7 +675,7 @@ function applySummaryEdits() {
 	if (!summaryRowRef.value) return;
 	const nodes = Array.from(
 		summaryRowRef.value.querySelectorAll<HTMLElement>(
-			"[data-rule-id], [data-meta-key]",
+			"[data-rule-id]",
 		),
 	);
 	if (nodes.length === 0) return;
@@ -782,33 +685,9 @@ function applySummaryEdits() {
 	const scopeLabels = new Map<string, string>();
 	const revertScopeTargets = new Map<string, string>();
 	const revertValueTargets = new Map<string, string>();
-	const revertMetaTargets = new Map<string, string>();
-	const metaEdits: {
-		degreesSource?: number;
-		degreesTarget?: number;
-		isSubgraph?: boolean;
-	} = {};
 	const errors: string[] = [];
 	const editedRuleIds = new Set<string>();
 	for (const node of nodes) {
-		const metaKey = node.dataset.metaKey;
-		if (metaKey) {
-			const rawValue = node.textContent || "";
-			const result = validateMetaValue(metaKey, rawValue);
-			if (!result.valid) {
-				revertMetaTargets.set(metaKey, metaDisplayValue(metaKey));
-				setInvalidMeta(metaKey, result.message || "Invalid value.");
-				if (result.message) errors.push(result.message);
-				continue;
-			}
-			setInvalidMeta(metaKey, null);
-			const normalized = result.normalized ?? normalizeSummaryValue(rawValue);
-			node.textContent = normalized;
-			if (metaKey === "degree_source") metaEdits.degreesSource = Number(normalized);
-			if (metaKey === "degree_target") metaEdits.degreesTarget = Number(normalized);
-			if (metaKey === "subgraph") metaEdits.isSubgraph = normalized === "on";
-			continue;
-		}
 		const ruleId = node.dataset.ruleId;
 		if (!ruleId) continue;
 		const rule = ruleIndex.value.get(ruleId);
@@ -851,19 +730,10 @@ function applySummaryEdits() {
 
 	if (
 		revertScopeTargets.size > 0 ||
-		revertValueTargets.size > 0 ||
-		revertMetaTargets.size > 0
+		revertValueTargets.size > 0
 	) {
 		for (const node of nodes) {
 			const ruleId = node.dataset.ruleId;
-			const metaKey = node.dataset.metaKey;
-			if (metaKey) {
-				const revertValue = revertMetaTargets.get(metaKey);
-				if (revertValue !== undefined) {
-					node.textContent = revertValue;
-				}
-				continue;
-			}
 			if (!ruleId) continue;
 			const editType = node.dataset.edit;
 			if (editType === "scope") {
@@ -910,11 +780,7 @@ function applySummaryEdits() {
 		})),
 	};
 
-	const metaChanged =
-		metaEdits.degreesSource !== undefined ||
-		metaEdits.degreesTarget !== undefined ||
-		metaEdits.isSubgraph !== undefined;
-	if (!changed && !metaChanged) return;
+	if (!changed) return;
 
 	for (const rule of [
 		...nextGroup.rules,
@@ -988,26 +854,6 @@ function applySummaryEdits() {
 		return;
 	}
 
-	if (metaChanged) {
-		smartSearch.setDegrees(
-			{
-				source:
-					metaEdits.degreesSource !== undefined
-						? metaEdits.degreesSource
-						: smartSearch.degreesSource.value,
-				target:
-					metaEdits.degreesTarget !== undefined
-						? metaEdits.degreesTarget
-						: smartSearch.degreesTarget.value,
-				isSubgraph:
-					metaEdits.isSubgraph !== undefined
-						? metaEdits.isSubgraph
-						: smartSearch.isSubgraph.value,
-			},
-			"querybuilder",
-		);
-	}
-
 	smartSearch.onQueryBuilderEdit(nextGroup);
 	applyQueryBuilderEdits();
 }
@@ -1026,17 +872,6 @@ function handleSummaryFocusOut() {
 
 function handleSummaryInput(event: Event) {
 	const target = event.currentTarget as HTMLElement | null;
-	const metaKey = target?.dataset.metaKey;
-	if (metaKey) {
-		const rawValue = target?.textContent || "";
-		const result = validateMetaValue(metaKey, rawValue);
-		if (!result.valid) {
-			setInvalidMeta(metaKey, result.message || "Invalid value.");
-		} else {
-			setInvalidMeta(metaKey, null);
-		}
-		return;
-	}
 	const ruleId = target?.dataset.ruleId;
 	if (!ruleId) return;
 	const rule = ruleIndex.value.get(ruleId);
@@ -1088,11 +923,7 @@ function applyQueryAndSearch(
 	});
 	store.search();
 	if (baseGroup) {
-		lastAppliedSignature.value = buildAppliedSignature(baseGroup, {
-			degreesSource: query.degreesSource,
-			degreesTarget: query.degreesTarget,
-			isSubgraph: query.isSubgraph,
-		});
+		lastAppliedSignature.value = buildAppliedSignature(baseGroup);
 	}
 	if (updateUrl) {
 		const includeSearchString = !!smartSearch.searchString.value;
@@ -1107,9 +938,6 @@ function applyQueryAndSearch(
 				sortBy: query.sortBy,
 				sortDirection: query.sortDirection,
 				page: query.page,
-				degreesSource: query.degreesSource,
-				degreesTarget: query.degreesTarget,
-				isSubgraph: query.isSubgraph,
 			},
 		);
 		appendFilterParams(params, filterState.value);
@@ -1127,11 +955,7 @@ function applyQueryAndSearch(
 
 function applyQueryBuilderEdits() {
 	const group = smartSearch.queryBuilderGroup.value;
-	const signature = buildAppliedSignature(group, {
-		degreesSource: smartSearch.degreesSource.value,
-		degreesTarget: smartSearch.degreesTarget.value,
-		isSubgraph: smartSearch.isSubgraph.value,
-	});
+	const signature = buildAppliedSignature(group);
 	if (signature === lastAppliedSignature.value) return;
 
 	const rangeValidation = validateYearRanges(group);
@@ -1157,9 +981,6 @@ function applyQueryBuilderEdits() {
 		sortBy: store.query.value.sortBy,
 		sortDirection: store.query.value.sortDirection,
 		pageSize: store.query.value.pageSize,
-		degreesSource: smartSearch.degreesSource.value,
-		degreesTarget: smartSearch.degreesTarget.value,
-		isSubgraph: smartSearch.isSubgraph.value,
 		page: 1,
 		cursor: undefined,
 	};
@@ -1172,7 +993,7 @@ function applyQueryBuilderEdits() {
 }
 
 function handleInvalidRoute(error: string) {
-	routeError.value = error;
+	toast.error(error, { duration: 4000, closeButton: true });
 	store.resetQuery();
 	smartSearch.clearAll();
 	syncingRoute.value = true;
@@ -1241,19 +1062,11 @@ function applyRouteQuery() {
 				page: 1,
 				sortBy: searchResult.query.sortBy,
 				sortDirection: searchResult.query.sortDirection,
-				degreesSource: searchResult.query.degreesSource,
-				degreesTarget: searchResult.query.degreesTarget,
-				isSubgraph: searchResult.query.isSubgraph,
 			};
 			routeError.value = null;
 			syncingSmartSearch.value = true;
 			smartSearch.setSearchString(searchString);
 			smartSearch.queryBuilderGroup.value = group;
-			smartSearch.setDegrees({
-				source: nextQuery.degreesSource,
-				target: nextQuery.degreesTarget,
-				isSubgraph: nextQuery.isSubgraph,
-			});
 			smartSearch.lastEditSource.value = "searchbar";
 			nextTick(() => {
 				syncingSmartSearch.value = false;
@@ -1294,18 +1107,6 @@ function applyRouteQuery() {
 		page: parsed.state.page || 1,
 		sortBy: parsed.state.sortBy || mergedQuery.sortBy,
 		sortDirection: parsed.state.sortDirection || mergedQuery.sortDirection,
-		degreesSource:
-			parsed.state.degreesSource !== undefined
-				? parsed.state.degreesSource
-				: mergedQuery.degreesSource,
-		degreesTarget:
-			parsed.state.degreesTarget !== undefined
-				? parsed.state.degreesTarget
-				: mergedQuery.degreesTarget,
-		isSubgraph:
-			parsed.state.isSubgraph !== undefined
-				? parsed.state.isSubgraph
-				: mergedQuery.isSubgraph,
 	};
 
 	if (!filterError) {
@@ -1315,20 +1116,10 @@ function applyRouteQuery() {
 	if (parsed.state.searchString) {
 		smartSearch.setSearchString(parsed.state.searchString);
 		smartSearch.queryBuilderGroup.value = group;
-		smartSearch.setDegrees({
-			source: nextQuery.degreesSource,
-			target: nextQuery.degreesTarget,
-			isSubgraph: nextQuery.isSubgraph,
-		});
 		smartSearch.lastEditSource.value = "searchbar";
 	} else {
 		smartSearch.setSearchString("");
 		smartSearch.onQueryBuilderEdit(group);
-		smartSearch.setDegrees({
-			source: nextQuery.degreesSource,
-			target: nextQuery.degreesTarget,
-			isSubgraph: nextQuery.isSubgraph,
-		});
 	}
 	nextTick(() => {
 		syncingSmartSearch.value = false;
@@ -1339,11 +1130,7 @@ function applyRouteQuery() {
 		baseGroup: group,
 		requestGroup,
 	});
-	lastAppliedSignature.value = buildAppliedSignature(group, {
-		degreesSource: nextQuery.degreesSource,
-		degreesTarget: nextQuery.degreesTarget,
-		isSubgraph: nextQuery.isSubgraph,
-	});
+	lastAppliedSignature.value = buildAppliedSignature(group);
 }
 
 onMounted(() => {
@@ -1402,9 +1189,6 @@ function handleSubmit() {
 		sortBy: store.query.value.sortBy,
 		sortDirection: store.query.value.sortDirection,
 		pageSize: store.query.value.pageSize,
-		degreesSource: smartSearch.degreesSource.value,
-		degreesTarget: smartSearch.degreesTarget.value,
-		isSubgraph: smartSearch.isSubgraph.value,
 		page: 1,
 		cursor: undefined,
 	};
@@ -1442,9 +1226,6 @@ function handleEditSearch() {
 			searchString: includeSearchString
 				? smartSearch.searchString.value
 				: undefined,
-			degreesSource: store.query.value.degreesSource,
-			degreesTarget: store.query.value.degreesTarget,
-			isSubgraph: store.query.value.isSubgraph,
 		},
 	);
 	router.push({ path: "/", query: Object.fromEntries(params.entries()) });
@@ -1466,15 +1247,11 @@ function handleFilterChange(partial: Partial<SearchQuery>) {
 }
 
 function handlePageChange(page: number) {
+	if (page < 1) return;
 	const cursor = store.cursorHistory.value[page];
-	if (
-		!clientFilterActive.value &&
-		page > 1 &&
-		!cursor &&
-		!store.hasCachedPage(page) &&
-		!store.hasFullCache()
-	)
-		return;
+	// For cursor-based (non-client-filter) pagination: if we don't have a cursor
+	// for this page and it's not page 1, we can't navigate there.
+	if (!clientFilterActive.value && page > 1 && !cursor) return;
 	const requestGroup = buildEffectiveGroup(
 		smartSearch.queryBuilderGroup.value,
 		filterState.value,
@@ -1483,7 +1260,25 @@ function handlePageChange(page: number) {
 		{
 			...store.query.value,
 			page,
-			cursor: clientFilterActive.value ? undefined : cursor,
+			cursor: clientFilterActive.value ? undefined : (cursor ?? undefined),
+		},
+		true,
+		{ baseGroup: smartSearch.queryBuilderGroup.value, requestGroup },
+	);
+}
+
+function handlePageSizeChange(size: number) {
+	store.resetPagination();
+	const requestGroup = buildEffectiveGroup(
+		smartSearch.queryBuilderGroup.value,
+		filterState.value,
+	);
+	applyQueryAndSearch(
+		{
+			...store.query.value,
+			pageSize: size,
+			page: 1,
+			cursor: undefined,
 		},
 		true,
 		{ baseGroup: smartSearch.queryBuilderGroup.value, requestGroup },
@@ -1576,27 +1371,6 @@ function handleFindSimilar(citation: Citation) {
 														{{ segment.text }}
 													</span>
 													<span
-														v-else-if="segment.type === 'meta'"
-														:class="[
-															'query-value',
-															invalidRuleKeys.has(
-																`meta:${segment.metaKey}`,
-															)
-																? 'query-value-invalid'
-																: '',
-														]"
-														contenteditable="true"
-														spellcheck="false"
-														:data-meta-key="segment.metaKey"
-														data-edit="meta"
-														@input="handleSummaryInput"
-														@keyup="handleSummaryInput"
-														@paste="handleSummaryInput"
-														@keydown.enter="handleSummaryEnter"
-													>
-														{{ segment.text }}
-													</span>
-													<span
 														v-else
 														:class="[
 															'query-value',
@@ -1681,9 +1455,9 @@ function handleFindSimilar(citation: Citation) {
 					<section
 						class="flex min-h-0 flex-1 flex-col pt-6 pr-6 pb-0 pl-6 min-w-0"
 					>
-						<!-- Loading -->
+						<!-- Loading (initial search only, not pagination) -->
 						<div
-							v-if="store.loading.value"
+							v-if="store.loading.value && !store.results.value"
 							class="flex flex-1 items-center justify-center"
 						>
 							<div class="text-center space-y-3">
@@ -1742,6 +1516,8 @@ function handleFindSimilar(citation: Citation) {
 							<ResultStats
 								:total="store.results.value.total"
 								:total-is-exact="store.results.value.totalIsExact"
+								:rs-total="store.results.value.rsTotal"
+								:echr-total="store.results.value.echrTotal"
 								:has-more="!!store.results.value.nextCursor"
 								:loading-more="store.results.value.loadingMore"
 								:ai-summary="store.results.value.aiSummary"
@@ -1767,7 +1543,7 @@ function handleFindSimilar(citation: Citation) {
 									:sort-by="store.query.value.sortBy"
 									:sort-direction="store.query.value.sortDirection"
 									:view-mode="viewMode"
-									:disabled="!store.isFullyLoaded.value"
+									:disabled="store.loading.value"
 									@change="
 										(sortBy: string, dir: string) => {
 											store.resetPagination();
@@ -1779,10 +1555,8 @@ function handleFindSimilar(citation: Citation) {
 												{
 													...store.query.value,
 													sortBy: sortBy as
-														| 'relevance'
 														| 'date'
-														| 'citations'
-														| 'importance',
+														| 'citations',
 													sortDirection: dir as 'asc' | 'desc',
 													page: 1,
 													cursor: undefined,
@@ -1800,7 +1574,7 @@ function handleFindSimilar(citation: Citation) {
 								<BulkActions
 									:selected-count="store.selectedCount.value"
 									:total-count="store.results.value.results.length"
-									:disabled="!store.isFullyLoaded.value"
+									:disabled="store.loading.value"
 									@select-all="store.selectAll()"
 									@clear="store.clearSelection()"
 									@export="(format) => store.exportSelected(format)"
@@ -1815,15 +1589,18 @@ function handleFindSimilar(citation: Citation) {
 									:selected-result-id="store.selectedResult.value?.id"
 									:selected-ids="store.selectedIds.value"
 									:page="store.query.value.page"
+									:page-size="store.query.value.pageSize"
 									:total-pages="store.totalPages.value || undefined"
 									:has-next="!!store.results.value.nextCursor"
 									:estimated-total-pages="estimatedTotalPages || undefined"
 									:total-is-exact="store.results.value.totalIsExact"
-									:disabled="!store.isFullyLoaded.value"
+									:disabled="store.loading.value"
+									:loading="store.loading.value"
 									:view-mode="viewMode"
 									@select="handleSelectResult"
 									@toggle="(id) => store.toggleSelection(id)"
 									@page="handlePageChange"
+									@page-size-change="handlePageSizeChange"
 								/>
 							</div>
 						</div>

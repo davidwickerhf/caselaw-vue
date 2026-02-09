@@ -1,61 +1,6 @@
-import type { Citation, SearchQuery, SearchResult, SearchFacets, FacetItem, QueryBuilderGroup, QueryBuilderRule, ApiEdge, ApiEdgesPagination } from '~/lib/types';
+import type { Citation, SearchQuery, SearchResult, SearchFacets, FacetItem, QueryBuilderGroup, QueryBuilderRule } from '~/lib/types';
 import { fetchCombinedPage, DEFAULT_PAGE_SIZE } from '~/lib/api/client';
 import { searchQueryToQueryBuilderGroup } from '~/lib/utils/search-query';
-
-type FacetCounts = {
-	sources: Map<string, number>;
-	years: Map<string, number>;
-	articles: Map<string, number>;
-	respondentStates: Map<string, number>;
-	documentTypes: Map<string, number>;
-	importance: Map<string, number>;
-	instances: Map<string, number>;
-	domains: Map<string, number>;
-};
-
-function createFacetCounts(): FacetCounts {
-	return {
-		sources: new Map(),
-		years: new Map(),
-		articles: new Map(),
-		respondentStates: new Map(),
-		documentTypes: new Map(),
-		importance: new Map(),
-		instances: new Map(),
-		domains: new Map()
-	};
-}
-
-function incrementCount(map: Map<string, number>, value: string | number | undefined) {
-	if (value === undefined || value === null) return;
-	const key = String(value);
-	if (!key) return;
-	map.set(key, (map.get(key) || 0) + 1);
-}
-
-function incrementCountList(map: Map<string, number>, values: (string | number)[] | undefined) {
-	if (!values) return;
-	for (const value of values) {
-		incrementCount(map, value);
-	}
-}
-
-function addFacetCounts(counts: FacetCounts, cases: Citation[]) {
-	for (const c of cases) {
-		incrementCount(counts.sources, c.source);
-		if (c.year > 0) incrementCount(counts.years, c.year);
-		incrementCountList(counts.articles, c.article_violated);
-		incrementCount(counts.respondentStates, c.respondent_state);
-		incrementCount(counts.documentTypes, c.document_type);
-		incrementCount(counts.importance, c.importance);
-		if (c.instance) incrementCount(counts.instances, c.instance);
-		if (c.domains && c.domains.length > 0) {
-			incrementCountList(counts.domains, c.domains);
-		} else if (c.domain) {
-			incrementCount(counts.domains, c.domain);
-		}
-	}
-}
 
 // Combined endpoint now supports article filters server-side, so keep client-only list empty.
 const CLIENT_ONLY_FIELDS = new Set<string>();
@@ -139,24 +84,6 @@ function applyClientFilters(citations: Citation[], rules: QueryBuilderRule[]): C
 	});
 }
 
-function countsToFacets(counts: FacetCounts): SearchFacets {
-	const mapToFacet = (map: Map<string, number>): FacetItem[] =>
-		Array.from(map.entries())
-			.map(([value, count]) => ({ value, count }))
-			.sort((a, b) => b.count - a.count);
-
-	return {
-		sources: mapToFacet(counts.sources),
-		years: mapToFacet(counts.years),
-		articles: mapToFacet(counts.articles),
-		respondentStates: mapToFacet(counts.respondentStates),
-		documentTypes: mapToFacet(counts.documentTypes),
-		importance: mapToFacet(counts.importance),
-		instances: mapToFacet(counts.instances),
-		domains: mapToFacet(counts.domains)
-	};
-}
-
 /**
  * Compute facets from the full result set.
  */
@@ -197,6 +124,37 @@ export function computeFacets(cases: Citation[]): SearchFacets {
 }
 
 /**
+ * Map server-side facets (from /api/combined first-page response) to SearchFacets.
+ */
+export function mapServerFacets(
+	raw: Record<string, Array<{ value: string | number; count: number }>>,
+	totals?: { rsTotal?: number; echrTotal?: number }
+): SearchFacets {
+	const toFacetItems = (arr?: Array<{ value: string | number; count: number }>): FacetItem[] =>
+		(arr || []).map(f => ({ value: String(f.value), count: f.count }));
+
+	const rsCount = totals?.rsTotal ?? (raw.rs_source ? raw.rs_source.reduce((s, f) => s + f.count, 0) : 0);
+	const echrCount = totals?.echrTotal ?? (raw.echr_document_type ? raw.echr_document_type.reduce((s, f) => s + f.count, 0) : 0);
+
+	return {
+		sources: [
+			...(rsCount > 0 ? [{ value: 'Rechtspraak', count: rsCount }] : []),
+			...(echrCount > 0 ? [{ value: 'HUDOC', count: echrCount }] : []),
+		],
+		years: [],
+		articles: toFacetItems(raw.echr_article_violated),
+		respondentStates: toFacetItems(raw.echr_respondent_state),
+		documentTypes: [
+			...toFacetItems(raw.rs_document_type),
+			...toFacetItems(raw.echr_document_type),
+		],
+		importance: toFacetItems(raw.echr_importance),
+		instances: toFacetItems(raw.rs_instance),
+		domains: toFacetItems(raw.rs_domain),
+	};
+}
+
+/**
  * Build a SearchResult from accumulated citations.
  */
 function buildSearchResult(
@@ -206,13 +164,16 @@ function buildSearchResult(
 		nextCursor?: string;
 		total?: number;
 		totalIsExact?: boolean;
+		rsTotal?: number;
+		echrTotal?: number;
 		loadingMore?: boolean;
 		facets?: SearchFacets;
-		edges?: ApiEdge[];
-		edgesPagination?: ApiEdgesPagination;
+		serverFacets?: Record<string, Array<{ value: string | number; count: number }>>;
 	}
 ): SearchResult {
-	const facets = opts.facets ?? computeFacets(citations);
+	const facets = opts.serverFacets
+		? mapServerFacets(opts.serverFacets, { rsTotal: opts.rsTotal, echrTotal: opts.echrTotal })
+		: (opts.facets ?? computeFacets(citations));
 	const total = opts.total ?? (query.page - 1) * query.pageSize + citations.length;
 	const totalIsExact = opts.totalIsExact ?? false;
 
@@ -220,14 +181,13 @@ function buildSearchResult(
 		results: citations,
 		total,
 		totalIsExact,
+		rsTotal: opts.rsTotal,
+		echrTotal: opts.echrTotal,
 		page: query.page,
 		pageSize: query.pageSize,
 		facets,
 		nextCursor: opts.nextCursor,
-		loadingMore: opts.loadingMore
-		,
-		edges: opts.edges,
-		edgesPagination: opts.edgesPagination
+		loadingMore: opts.loadingMore,
 	};
 }
 
@@ -297,9 +257,6 @@ export async function executeSearch(
 			cleanup();
 			return () => {};
 		}
-		const pageEdges = result.edges;
-		const pageEdgesPagination = result.edgesPagination;
-
 		if (!clientFiltering && query.page > 1 && seed) {
 			onUpdate(
 				buildSearchResult(result.citations, query, {
@@ -307,8 +264,6 @@ export async function executeSearch(
 					total: seed.total,
 					totalIsExact: seed.totalIsExact,
 					facets: seed.facets,
-					edges: pageEdges,
-					edgesPagination: pageEdgesPagination
 				})
 			);
 			cleanup();
@@ -345,8 +300,6 @@ export async function executeSearch(
 						totalIsExact,
 						loadingMore: !!nextCursor,
 						facets: computeFacets(filtered),
-						edges: pageEdges,
-						edgesPagination: pageEdgesPagination
 					})
 				);
 				onAccumulated?.({ all: filtered, complete: !nextCursor });
@@ -376,68 +329,21 @@ export async function executeSearch(
 			};
 		}
 
-		const facetCounts = createFacetCounts();
-		addFacetCounts(facetCounts, result.citations);
-		const allCitations: Citation[] = [...result.citations];
-
 		const hasMore = !!result.nextCursor;
-		const baseTotal = (query.page - 1) * pageSize + result.citations.length;
-		const exactFromBackend = result.totalIsExact === true;
-		const total = exactFromBackend ? (result.total ?? baseTotal) : baseTotal;
-		const totalIsExact = exactFromBackend || (!hasMore && result.total === undefined);
+		const total = result.total ?? ((query.page - 1) * pageSize + result.citations.length);
+		const totalIsExact = result.totalIsExact === true || (!hasMore && result.total === undefined);
 
 		onUpdate(
 			buildSearchResult(result.citations, query, {
 				nextCursor: result.nextCursor,
 				total,
 				totalIsExact,
-				loadingMore: hasMore,
-				facets: countsToFacets(facetCounts),
-				edges: pageEdges,
-				edgesPagination: pageEdgesPagination
+				rsTotal: result.rsTotal,
+				echrTotal: result.echrTotal,
+				serverFacets: result.facets,
 			})
 		);
-		if (!hasMore) {
-			onAccumulated?.({ all: allCitations, complete: true });
-		}
-
-		if (query.page === 1 && !query.cursor && hasMore) {
-			let count = result.citations.length;
-			let cursor = result.nextCursor;
-			while (cursor && !cancelled) {
-				ensureNotAborted();
-				const pageResult = await fetchCombinedPage(query, effectiveGroup, pageSize, cursor, signal);
-				count += pageResult.citations.length;
-				addFacetCounts(facetCounts, pageResult.citations);
-				allCitations.push(...pageResult.citations);
-				cursor = pageResult.nextCursor;
-				onUpdate(
-					buildSearchResult(result.citations, query, {
-						nextCursor: result.nextCursor,
-						total: exactFromBackend ? total : count,
-						totalIsExact: exactFromBackend,
-						loadingMore: true,
-						facets: countsToFacets(facetCounts),
-						edges: pageEdges,
-						edgesPagination: pageEdgesPagination
-					})
-				);
-			}
-			if (!cancelled) {
-				onUpdate(
-					buildSearchResult(result.citations, query, {
-						nextCursor: result.nextCursor,
-						total: exactFromBackend ? total : count,
-						totalIsExact: true,
-						loadingMore: false,
-						facets: countsToFacets(facetCounts),
-						edges: pageEdges,
-						edgesPagination: pageEdgesPagination
-					})
-				);
-				onAccumulated?.({ all: allCitations, complete: true });
-			}
-		}
+		onAccumulated?.({ all: result.citations, complete: !hasMore });
 
 		cleanup();
 		return () => {

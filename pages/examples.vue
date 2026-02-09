@@ -10,7 +10,6 @@ import QueryJsonPanel from '~/components/examples/QueryJsonPanel.vue'
 import type { QueryBuilderGroup } from '~/lib/types'
 import { queryBuilderGroupToParams } from '~/lib/utils/query-builder-url'
 import { parseNaturalLanguageToQueryBuilderGroup } from '~/lib/parser/nl-query-parser'
-import { parseSearchInput } from '~/lib/parser/search-parser'
 import { defaultScopeForField } from '~/lib/utils/query-builder-config'
 import { useSearch } from '~/composables/useSearch'
 
@@ -25,9 +24,6 @@ type ExampleItem = {
   group: QueryBuilderGroup
   scope: 'ECHR' | 'RS' | 'MIXED'
   tags: string[]
-  degreesSource?: number
-  degreesTarget?: number
-  isSubgraph?: boolean
 }
 
 function genId(): string {
@@ -58,10 +54,8 @@ function buildTextExample(
   title: string,
   description: string,
   scope: ExampleItem['scope'],
-  tags: string[],
-  meta?: Pick<ExampleItem, 'degreesSource' | 'degreesTarget' | 'isSubgraph'>
+  tags: string[]
 ): ExampleItem {
-  const parsedMeta = degreesFromText(text)
   return {
     id: genId(),
     title,
@@ -69,28 +63,8 @@ function buildTextExample(
     searchText: text,
     group: parseNaturalLanguageToQueryBuilderGroup(text),
     scope,
-    tags,
-    degreesSource: meta?.degreesSource ?? parsedMeta.degreesSource,
-    degreesTarget: meta?.degreesTarget ?? parsedMeta.degreesTarget,
-    isSubgraph: meta?.isSubgraph ?? parsedMeta.isSubgraph
+    tags
   }
-}
-
-function degreesFromText(text: string): Pick<ExampleItem, 'degreesSource' | 'degreesTarget' | 'isSubgraph'> {
-  const result = parseSearchInput(text);
-  let degreesSource: number | undefined;
-  let degreesTarget: number | undefined;
-  let isSubgraph = false;
-  for (const token of result.tokens) {
-    if (token.type === 'degree_source') degreesSource = Number(token.value);
-    if (token.type === 'degree_target') degreesTarget = Number(token.value);
-    if (token.type === 'degree_depth') {
-      degreesSource = Number(token.value);
-      degreesTarget = Number(token.value);
-    }
-    if (token.type === 'subgraph') isSubgraph = true;
-  }
-  return { degreesSource, degreesTarget, isSubgraph };
 }
 
 const textExamples = reactive<ExampleItem[]>([
@@ -270,12 +244,11 @@ const textExamples = reactive<ExampleItem[]>([
     ['title', 'date start', 'date end']
   ),
   buildTextExample(
-    'ECHR Article 2 violated Italy depth 2',
-    'Graph expansion (depth)',
-    'Add a graph depth to expand citation edges around the results.',
+    'ECHR "right to life" AND "fair trial" 2019',
+    'Multiple keywords (AND)',
+    'Combine multiple keyword phrases with AND logic.',
     'ECHR',
-    ['degree', 'graph', 'article'],
-    { degreesSource: 2, degreesTarget: 2 }
+    ['keyword', 'boolean']
   )
 ])
 
@@ -506,10 +479,7 @@ const filteredBuilderExamples = computed(() =>
 
 function buildResultsUrl(example: ExampleItem) {
   const params = queryBuilderGroupToParams(example.group, {
-    searchString: example.searchText || undefined,
-    degreesSource: example.degreesSource,
-    degreesTarget: example.degreesTarget,
-    isSubgraph: example.isSubgraph
+    searchString: example.searchText || undefined
   })
   return `/results?${params.toString()}`
 }
@@ -559,10 +529,6 @@ function openRandomExample() {
 function updateExampleSearch(example: ExampleItem, value: string) {
   example.searchText = value
   example.group = parseNaturalLanguageToQueryBuilderGroup(value)
-  const meta = degreesFromText(value)
-  example.degreesSource = meta.degreesSource
-  example.degreesTarget = meta.degreesTarget
-  example.isSubgraph = meta.isSubgraph
 }
 </script>
 
@@ -742,16 +708,10 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                     <QueryBuilderStandalone :group="example.group" panel-class="p-3" />
                     <QueryJsonPanel
                       :group="example.group"
-                      :degrees-source="example.degreesSource"
-                      :degrees-target="example.degreesTarget"
-                      :is-subgraph="example.isSubgraph"
                     />
                   </div>
                   <QueryPreview
                     :group="example.group"
-                    :degrees-source="example.degreesSource"
-                    :degrees-target="example.degreesTarget"
-                    :is-subgraph="example.isSubgraph"
                     class="mt-4"
                   />
                 </article>
@@ -793,16 +753,10 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                     <QueryBuilderStandalone :group="example.group" />
                     <QueryJsonPanel
                       :group="example.group"
-                      :degrees-source="example.degreesSource"
-                      :degrees-target="example.degreesTarget"
-                      :is-subgraph="example.isSubgraph"
                     />
                   </div>
                   <QueryPreview
                     :group="example.group"
-                    :degrees-source="example.degreesSource"
-                    :degrees-target="example.degreesTarget"
-                    :is-subgraph="example.isSubgraph"
                     class="mt-4"
                   />
 

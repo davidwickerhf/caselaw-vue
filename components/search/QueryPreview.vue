@@ -9,24 +9,14 @@ const props = withDefaults(defineProps<{
   class?: string
   showCopy?: boolean
   label?: string
-  degreesSource?: number
-  degreesTarget?: number
-  isSubgraph?: boolean
 }>(), {
   class: '',
   showCopy: true,
   label: 'Query preview',
-  degreesSource: undefined,
-  degreesTarget: undefined,
-  isSubgraph: undefined
 })
 
 const summary = computed(() =>
-  buildQuerySummarySegments(props.group, {
-    degreesSource: props.degreesSource,
-    degreesTarget: props.degreesTarget,
-    isSubgraph: props.isSubgraph
-  })
+  buildQuerySummarySegments(props.group)
     .map((seg) => seg.text)
     .join('')
     .trim()

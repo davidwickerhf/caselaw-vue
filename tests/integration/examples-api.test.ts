@@ -13,7 +13,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { parseNaturalLanguageToQueryBuilderGroup } from '~/lib/parser/nl-query-parser';
-import { parseSearchInput } from '~/lib/parser/search-parser';
 import { queryBuilderGroupToSearchQuery } from '~/lib/utils/search-query';
 import { buildCombinedPayload } from '~/lib/api/client';
 import { SEARCH_EXAMPLES } from '~/lib/utils/search-examples';
@@ -52,23 +51,6 @@ function makeGroup(
     return { id: genId(), operator, rules, groups };
 }
 
-function degreesFromText(text: string) {
-    const result = parseSearchInput(text);
-    let degreesSource: number | undefined;
-    let degreesTarget: number | undefined;
-    let isSubgraph = false;
-    for (const token of result.tokens) {
-        if (token.type === 'degree_source') degreesSource = Number(token.value);
-        if (token.type === 'degree_target') degreesTarget = Number(token.value);
-        if (token.type === 'degree_depth') {
-            degreesSource = Number(token.value);
-            degreesTarget = Number(token.value);
-        }
-        if (token.type === 'subgraph') isSubgraph = true;
-    }
-    return { degreesSource, degreesTarget, isSubgraph };
-}
-
 /**
  * Parse a text search string → QueryBuilderGroup → SearchQuery → API payload,
  * then POST to the combined endpoint and return the response.
@@ -78,10 +60,6 @@ async function executeTextQuery(text: string) {
     const parsed = queryBuilderGroupToSearchQuery(group);
     if (parsed.error) throw new Error(`Parse error for "${text}": ${parsed.error}`);
     const query = parsed.query!;
-    const degrees = degreesFromText(text);
-    query.degreesSource = degrees.degreesSource ?? 0;
-    query.degreesTarget = degrees.degreesTarget ?? 0;
-    query.isSubgraph = degrees.isSubgraph ?? false;
 
     const body = buildCombinedPayload(query, group);
     const response = await fetch(`${API_BASE}/api/combined`, {
@@ -97,16 +75,10 @@ async function executeTextQuery(text: string) {
  * Take a pre-built QueryBuilderGroup → SearchQuery → API payload,
  * then POST and return the response.
  */
-async function executeGroupQuery(
-    group: QueryBuilderGroup,
-    overrides?: { degreesSource?: number; degreesTarget?: number; isSubgraph?: boolean }
-) {
+async function executeGroupQuery(group: QueryBuilderGroup) {
     const parsed = queryBuilderGroupToSearchQuery(group);
     if (parsed.error) throw new Error(`Parse error for group: ${parsed.error}`);
     const query = parsed.query!;
-    query.degreesSource = overrides?.degreesSource ?? 0;
-    query.degreesTarget = overrides?.degreesTarget ?? 0;
-    query.isSubgraph = overrides?.isSubgraph ?? false;
 
     const body = buildCombinedPayload(query, group);
     const response = await fetch(`${API_BASE}/api/combined`, {
@@ -120,7 +92,7 @@ async function executeGroupQuery(
 
 // ─── Text examples (from pages/examples.vue) ───────────────────────────────
 
-const textExamples: Array<{ text: string; title: string; degreesSource?: number; degreesTarget?: number }> = [
+const textExamples: Array<{ text: string; title: string }> = [
     { text: 'Article 3 violated Turkey between 2014 and 2016', title: 'Article + date range' },
     { text: 'ECHR respondent state Armenia importance 1', title: 'Source + importance' },
     { text: 'Rechtspraak "intellectual property" 2020', title: 'Rechtspraak topical search' },
@@ -146,7 +118,6 @@ const textExamples: Array<{ text: string; title: string; degreesSource?: number;
     { text: 'Rechtspraak selected law BWBX1234|56 2020', title: 'Selected law' },
     { text: 'Rechtspraak articles "BWBR0001830" 2018', title: 'Rechtspraak articles' },
     { text: 'title "freedom of expression" date start 2019-01-01 date end 2019-12-31', title: 'Title + exact date range' },
-    { text: 'ECHR Article 2 violated Italy depth 2', title: 'Graph expansion (depth)', degreesSource: 2, degreesTarget: 2 },
 ];
 
 // ─── Builder examples (from pages/examples.vue) ────────────────────────────
@@ -342,12 +313,6 @@ describe.sequential('Suggested searches (SEARCH_EXAMPLES) → parse → API', ()
                 const parsed = queryBuilderGroupToSearchQuery(group);
                 expect(parsed.error, `Parse error: ${parsed.error}`).toBeUndefined();
                 const query = parsed.query!;
-
-                // Extract degree info the same way as the search bar
-                const degrees = degreesFromText(text);
-                query.degreesSource = degrees.degreesSource ?? 0;
-                query.degreesTarget = degrees.degreesTarget ?? 0;
-                query.isSubgraph = degrees.isSubgraph ?? false;
 
                 // Step 3: Build payload and call API
                 const body = buildCombinedPayload(query, group);

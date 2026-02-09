@@ -51,10 +51,4 @@ describe('useSmartSearch', () => {
     expect(hasState).toBe(true);
   });
 
-  it('extracts graph degrees from natural language', () => {
-    smart.setFromText('Cases in Germany degree source 2 degree target 3 subgraph');
-    expect(smart.degreesSource.value).toBe(2);
-    expect(smart.degreesTarget.value).toBe(3);
-    expect(smart.isSubgraph.value).toBe(true);
-  });
 });

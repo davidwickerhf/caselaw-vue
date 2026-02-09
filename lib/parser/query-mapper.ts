@@ -26,17 +26,6 @@ export function tokensToSearchQuery(
     const eclis: string[] = [];
     const titles: string[] = [];
     const languages: string[] = [];
-    let degreesSource: number | null = null;
-    let degreesTarget: number | null = null;
-    let subgraph = false;
-
-    const clampDegree = (value: string) => {
-        const num = Number(value);
-        if (!Number.isInteger(num)) return null;
-        if (num < 0 || num > 5) return null;
-        return num;
-    };
-
     for (const token of tokens) {
         switch (token.type) {
             case 'article_violated':
@@ -124,27 +113,6 @@ export function tokensToSearchQuery(
             case 'language':
                 languages.push(token.value.toUpperCase());
                 break;
-            case 'degree_source': {
-                const value = clampDegree(token.value);
-                if (value !== null) degreesSource = value;
-                break;
-            }
-            case 'degree_target': {
-                const value = clampDegree(token.value);
-                if (value !== null) degreesTarget = value;
-                break;
-            }
-            case 'degree_depth': {
-                const value = clampDegree(token.value);
-                if (value !== null) {
-                    degreesSource = value;
-                    degreesTarget = value;
-                }
-                break;
-            }
-            case 'subgraph':
-                subgraph = true;
-                break;
         }
     }
 
@@ -165,9 +133,6 @@ export function tokensToSearchQuery(
     if (domains.length) query.scoped.rs.domains = domains;
     if (rsArticles.length) query.scoped.rs.articles = rsArticles;
     if (selectedLaws.length) query.scoped.rs.selectedLaws = selectedLaws;
-    if (degreesSource !== null) query.degreesSource = degreesSource;
-    if (degreesTarget !== null) query.degreesTarget = degreesTarget;
-    if (subgraph) query.isSubgraph = true;
     // If no source token, keep default (both sources)
 
     return query;

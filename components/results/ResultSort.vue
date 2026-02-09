@@ -15,10 +15,8 @@ const emit = defineEmits<{
 }>()
 
 const sortOptions = [
-  { value: 'relevance', label: 'Relevance' },
   { value: 'date', label: 'Date' },
-  { value: 'citations', label: 'Citations' },
-  { value: 'importance', label: 'Importance' }
+  { value: 'citations', label: 'Citations' }
 ]
 
 function handleSort(value: string) {

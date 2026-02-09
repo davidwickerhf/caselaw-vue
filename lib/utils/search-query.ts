@@ -118,31 +118,6 @@ export function searchQueryToTokens(query: SearchQuery): ParsedToken[] {
 		}
 	}
 
-	if (query.degreesSource !== defaults.degreesSource) {
-		addToken({
-			id: genId(),
-			type: 'degree_source',
-			value: String(query.degreesSource),
-			display: `Degree source ${query.degreesSource}`
-		});
-	}
-	if (query.degreesTarget !== defaults.degreesTarget) {
-		addToken({
-			id: genId(),
-			type: 'degree_target',
-			value: String(query.degreesTarget),
-			display: `Degree target ${query.degreesTarget}`
-		});
-	}
-	if (query.isSubgraph) {
-		addToken({
-			id: genId(),
-			type: 'subgraph',
-			value: 'true',
-			display: 'Subgraph only'
-		});
-	}
-
 	return tokens;
 }
 
@@ -759,7 +734,7 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 
 	const sortBy = params.get('sortBy');
 	if (sortBy) {
-		if (!['relevance', 'date', 'citations', 'importance'].includes(sortBy)) {
+		if (!['date', 'citations'].includes(sortBy)) {
 			return { error: 'Invalid sortBy value.' };
 		}
 		query.sortBy = sortBy as SearchQuery['sortBy'];

@@ -37,14 +37,12 @@ const tutorialSearch2 = 'ECHR "fair trial" 2018'
 const tutorialSearch3 = 'Rechtspraak "tax law" between 2014 and 2016'
 const tutorialSearch4 = 'date start 2020-02-01 date end 2020-03-15'
 const tutorialSearch5 = 'language ENG judgment date on 2020-05-01'
-const tutorialSearch6 = 'ECHR Article 2 violated Italy depth 2'
 
 const tutorialGroup1 = parseNaturalLanguageToQueryBuilderGroup(tutorialSearch1)
 const tutorialGroup2 = parseNaturalLanguageToQueryBuilderGroup(tutorialSearch2)
 const tutorialGroup3 = parseNaturalLanguageToQueryBuilderGroup(tutorialSearch3)
 const tutorialGroup4 = parseNaturalLanguageToQueryBuilderGroup(tutorialSearch4)
 const tutorialGroup5 = parseNaturalLanguageToQueryBuilderGroup(tutorialSearch5)
-const tutorialGroup6 = parseNaturalLanguageToQueryBuilderGroup(tutorialSearch6)
 
 const builderBasicGroup = makeGroup('AND', [
   makeRule('respondent_state', 'Germany', 'equals', 'ECHR'),
@@ -100,7 +98,6 @@ const builderNotGroup = makeGroup('AND', [
                 <a href="#validation" class="block hover:text-foreground transition-colors">Validation Rules</a>
                 <a href="#editing" class="block hover:text-foreground transition-colors">Editing the Summary</a>
                 <a href="#filters" class="block hover:text-foreground transition-colors">Filters, Sorting, Pagination</a>
-                <a href="#graph" class="block hover:text-foreground transition-colors">Graph Expansion</a>
                 <a href="#errors" class="block hover:text-foreground transition-colors">Errors & Fixes</a>
                 <a href="#rules" class="block hover:text-foreground transition-colors">Rules & Limits</a>
                 <a href="#sharing" class="block hover:text-foreground transition-colors">Sharing & URLs</a>
@@ -658,32 +655,6 @@ const builderNotGroup = makeGroup('AND', [
               </div>
             </section>
 
-            <section id="graph" class="space-y-4">
-              <div class="flex items-center gap-3">
-                <div class="h-px flex-1 bg-border/60" />
-                <h2 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Graph expansion</h2>
-                <div class="h-px flex-1 bg-border/60" />
-              </div>
-              <div class="text-sm text-muted-foreground">
-                Degrees control how far the graph expansion goes around each result. Set source/target degrees from 0 to 5.
-                Use depth to set both. You can also say “breadth” for source degree. Subgraph keeps edges restricted to the current page.
-              </div>
-              <div class="grid gap-4 lg:grid-cols-2">
-                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
-                  <div class="text-xs font-semibold text-foreground">Natural language</div>
-                  <code class="text-xs text-foreground/80 font-mono">ECHR Article 2 violated Italy depth 2</code>
-                  <QueryPreview :group="tutorialGroup6" :degrees-source="2" :degrees-target="2" class="mt-3" />
-                </div>
-                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
-                  <div class="text-xs font-semibold text-foreground">Explicit degrees</div>
-                  <code class="text-xs text-foreground/80 font-mono">breadth 1 target degree 3 subgraph on</code>
-                  <div class="text-xs text-muted-foreground">
-                    Works in the search bar or the query builder “Graph expansion” controls.
-                  </div>
-                </div>
-              </div>
-            </section>
-
             <section id="errors" class="space-y-4">
               <div class="flex items-center gap-3">
                 <div class="h-px flex-1 bg-border/60" />
@@ -742,12 +713,6 @@ const builderNotGroup = makeGroup('AND', [
                 <div class="text-xs font-semibold text-foreground">Exact date format</div>
                 <div class="text-xs text-muted-foreground">
                   Exact date filters (Date Start/End, Judgment/Decision dates) must be YYYY‑MM‑DD and not in the future.
-                </div>
-              </div>
-              <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
-                <div class="text-xs font-semibold text-foreground">Degree limits</div>
-                <div class="text-xs text-muted-foreground">
-                  Source/target degrees accept values 0–5. Use subgraph when you only want edges inside the current page.
                 </div>
               </div>
               <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">

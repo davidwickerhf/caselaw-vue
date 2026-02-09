@@ -203,13 +203,13 @@ function buildExamples(): string[] {
                 examples.add(`ECHR application number ${app} and ${keyword}`);
                 break;
             case 12:
-                examples.add(`Cases in ${country} ${year} degree target 2`);
+                examples.add(`ECHR ${keyword} ${country} ${year}`);
                 break;
             case 13:
-                examples.add(`ECHR Article ${article} ${year} depth 2`);
+                examples.add(`ECHR Article ${article} ${keyword} ${year}`);
                 break;
             case 14:
-                examples.add(`Rechtspraak ${domain} ${year} degree source 1`);
+                examples.add(`Rechtspraak ${domain} ${instance} ${year}`);
                 break;
             case 15:
                 examples.add(`title ${title} ${year}`);

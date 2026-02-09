@@ -1,29 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { parseNaturalLanguageToQueryBuilderGroup } from '../../lib/parser/nl-query-parser';
 import { buildQuerySummarySegments } from '../../lib/utils/query-summary';
-import { parseSearchInput } from '../../lib/parser/search-parser';
-
-function extractDegrees(text: string) {
-  const result = parseSearchInput(text);
-  let degreesSource: number | undefined;
-  let degreesTarget: number | undefined;
-  let isSubgraph = false;
-  for (const token of result.tokens) {
-    if (token.type === 'degree_source') degreesSource = Number(token.value);
-    if (token.type === 'degree_target') degreesTarget = Number(token.value);
-    if (token.type === 'degree_depth') {
-      degreesSource = Number(token.value);
-      degreesTarget = Number(token.value);
-    }
-    if (token.type === 'subgraph') isSubgraph = true;
-  }
-  return { degreesSource, degreesTarget, isSubgraph };
-}
 
 function toPreview(text: string): string {
   const group = parseNaturalLanguageToQueryBuilderGroup(text);
-  const meta = extractDegrees(text);
-  return buildQuerySummarySegments(group, meta)
+  return buildQuerySummarySegments(group)
     .map((seg) => seg.text)
     .join('');
 }
@@ -56,8 +37,7 @@ describe('query preview round-trip', () => {
     'Any: Date Start equals 2020-02-01 AND Any: Date End equals 2020-03-15',
     'ECHR: Judgment Date Start equals 2020-05-01',
     'ECHR: Decision Date End before 2021-06-01',
-    'ECHR Article 2 violated Italy depth 2',
-    'degree source 1 degree target 3 subgraph'
+    'ECHR Article 2 violated Italy',
   ];
 
   it('preserves preview when re-parsed', () => {

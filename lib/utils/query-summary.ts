@@ -20,14 +20,7 @@ function ruleToText(rule: { field: string; operator: string; value: string; sour
 export type QuerySummarySegment =
     | { type: 'text'; text: string }
     | { type: 'value'; text: string; ruleId: string }
-    | { type: 'scope'; text: string; ruleId: string }
-    | { type: 'meta'; text: string; metaKey: 'degree_source' | 'degree_target' | 'subgraph' };
-
-export type QuerySummaryMeta = {
-    degreesSource?: number;
-    degreesTarget?: number;
-    isSubgraph?: boolean;
-};
+    | { type: 'scope'; text: string; ruleId: string };
 
 function ruleToSegments(rule: { id: string; field: string; operator: string; value: string; sourceScope: SourceScope }): QuerySummarySegment[] {
     if (!rule.value.trim()) return [];
@@ -103,37 +96,8 @@ export function summarizeQueryBuilder(group: QueryBuilderGroup, maxLength = 160)
     return `${text.slice(0, maxLength - 1)}…`;
 }
 
-function buildDegreeSegments(meta?: QuerySummaryMeta, hasBase = false): QuerySummarySegment[] {
-    if (!meta) return [];
-    const segments: QuerySummarySegment[] = [];
-    let prefix = hasBase ? ' AND ' : '';
-
-    const addMeta = (label: string, key: QuerySummarySegment['metaKey'], value: string) => {
-        segments.push({ type: 'text', text: `${prefix}${label} ` });
-        segments.push({ type: 'meta', metaKey: key, text: value });
-        prefix = ' AND ';
-    };
-
-    if (typeof meta.degreesSource === 'number' && meta.degreesSource > 0) {
-        addMeta('Breadth', 'degree_source', String(meta.degreesSource));
-    }
-    if (typeof meta.degreesTarget === 'number' && meta.degreesTarget > 0) {
-        addMeta('Target degree', 'degree_target', String(meta.degreesTarget));
-    }
-    if (meta.isSubgraph) {
-        addMeta('Subgraph', 'subgraph', 'on');
-    }
-
-    return segments;
-}
-
 export function buildQuerySummarySegments(
     group: QueryBuilderGroup,
-    meta?: QuerySummaryMeta
 ): QuerySummarySegment[] {
-    const base = groupToSegments(group);
-    const extras = buildDegreeSegments(meta, base.length > 0);
-    if (base.length === 0) return extras;
-    if (extras.length === 0) return base;
-    return [...base, ...extras];
+    return groupToSegments(group);
 }

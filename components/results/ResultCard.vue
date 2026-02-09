@@ -64,9 +64,6 @@ const summaryHtml = computed(() =>
               <Star class="h-3 w-3 fill-current" />
               {{ importanceLabel }}
             </span>
-            <span v-if="citation.relevanceScore && citation.relevanceScore > 0.7" class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-              {{ Math.round(citation.relevanceScore * 100) }}% match
-            </span>
           </div>
           <h3 class="mt-1 text-sm font-semibold text-foreground line-clamp-1">
             {{ citation.title || citation.ecli }}

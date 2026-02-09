@@ -29,9 +29,6 @@ export type QueryBuilderUrlState = {
     sortBy?: SearchQuery['sortBy'];
     sortDirection?: SearchQuery['sortDirection'];
     page?: number;
-    degreesSource?: number;
-    degreesTarget?: number;
-    isSubgraph?: boolean;
 };
 
 function genId(): string {
@@ -119,9 +116,6 @@ export function queryBuilderGroupToParams(
         sortBy?: SearchQuery['sortBy'];
         sortDirection?: SearchQuery['sortDirection'];
         page?: number;
-        degreesSource?: number;
-        degreesTarget?: number;
-        isSubgraph?: boolean;
     } = {}
 ): URLSearchParams {
     const params = new URLSearchParams();
@@ -135,15 +129,6 @@ export function queryBuilderGroupToParams(
     if (opts.sortBy && opts.sortBy !== defaults.sortBy) params.set('sortBy', opts.sortBy);
     if (opts.sortDirection && opts.sortDirection !== defaults.sortDirection) params.set('sortDirection', opts.sortDirection);
     if (opts.page && opts.page > 1) params.set('page', String(opts.page));
-    if (typeof opts.degreesSource === 'number' && opts.degreesSource !== defaults.degreesSource) {
-        params.set('degreesSource', String(opts.degreesSource));
-    }
-    if (typeof opts.degreesTarget === 'number' && opts.degreesTarget !== defaults.degreesTarget) {
-        params.set('degreesTarget', String(opts.degreesTarget));
-    }
-    if (typeof opts.isSubgraph === 'boolean' && opts.isSubgraph !== defaults.isSubgraph) {
-        params.set('isSubgraph', opts.isSubgraph ? '1' : '0');
-    }
 
     return params;
 }
@@ -170,18 +155,6 @@ export function paramsToQueryBuilderState(params: URLSearchParams): { state?: Qu
         const sortDirection = params.get('sortDirection') as SearchQuery['sortDirection'] | null;
         const page = params.get('page');
         const parsedPage = page ? Number(page) : undefined;
-        const degreesSourceRaw = params.get('degreesSource');
-        const degreesTargetRaw = params.get('degreesTarget');
-        const isSubgraphRaw = params.get('isSubgraph');
-        const degreesSource = degreesSourceRaw ? Number(degreesSourceRaw) : undefined;
-        const degreesTarget = degreesTargetRaw ? Number(degreesTargetRaw) : undefined;
-        if (degreesSource !== undefined && (!Number.isInteger(degreesSource) || degreesSource < 0 || degreesSource > 5)) {
-            return { error: 'Invalid degreesSource value.' };
-        }
-        if (degreesTarget !== undefined && (!Number.isInteger(degreesTarget) || degreesTarget < 0 || degreesTarget > 5)) {
-            return { error: 'Invalid degreesTarget value.' };
-        }
-        const isSubgraph = isSubgraphRaw === '1' || isSubgraphRaw === 'true';
         if (pageSize) {
             const num = Number(pageSize);
             if (!Number.isInteger(num) || num < 1) return { error: 'Invalid pageSize value.' };
@@ -194,9 +167,6 @@ export function paramsToQueryBuilderState(params: URLSearchParams): { state?: Qu
                     sortBy: sortBy || undefined,
                     sortDirection: sortDirection || undefined,
                     page: parsedPage && parsedPage > 0 ? parsedPage : undefined,
-                    degreesSource: Number.isFinite(degreesSource) ? degreesSource : undefined,
-                    degreesTarget: Number.isFinite(degreesTarget) ? degreesTarget : undefined,
-                    isSubgraph: isSubgraphRaw ? isSubgraph : undefined
                 }
             };
         }
@@ -208,9 +178,6 @@ export function paramsToQueryBuilderState(params: URLSearchParams): { state?: Qu
                 sortBy: sortBy || undefined,
                 sortDirection: sortDirection || undefined,
                 page: parsedPage && parsedPage > 0 ? parsedPage : undefined,
-                degreesSource: Number.isFinite(degreesSource) ? degreesSource : undefined,
-                degreesTarget: Number.isFinite(degreesTarget) ? degreesTarget : undefined,
-                isSubgraph: isSubgraphRaw ? isSubgraph : undefined
             }
         };
     }
@@ -228,18 +195,6 @@ export function paramsToQueryBuilderState(params: URLSearchParams): { state?: Qu
     const sortDirection = params.get('sortDirection') as SearchQuery['sortDirection'] | null;
     const page = params.get('page');
     const parsedPage = page ? Number(page) : undefined;
-    const degreesSourceRaw = params.get('degreesSource');
-    const degreesTargetRaw = params.get('degreesTarget');
-    const isSubgraphRaw = params.get('isSubgraph');
-    const degreesSource = degreesSourceRaw ? Number(degreesSourceRaw) : undefined;
-    const degreesTarget = degreesTargetRaw ? Number(degreesTargetRaw) : undefined;
-    if (degreesSource !== undefined && (!Number.isInteger(degreesSource) || degreesSource < 0 || degreesSource > 5)) {
-        return { error: 'Invalid degreesSource value.' };
-    }
-    if (degreesTarget !== undefined && (!Number.isInteger(degreesTarget) || degreesTarget < 0 || degreesTarget > 5)) {
-        return { error: 'Invalid degreesTarget value.' };
-    }
-    const isSubgraph = isSubgraphRaw === '1' || isSubgraphRaw === 'true';
     return {
         state: {
             group,
@@ -249,9 +204,6 @@ export function paramsToQueryBuilderState(params: URLSearchParams): { state?: Qu
             sortBy: sortBy || legacy.query.sortBy,
             sortDirection: sortDirection || legacy.query.sortDirection,
             page: parsedPage && parsedPage > 0 ? parsedPage : legacy.query.page,
-            degreesSource: Number.isFinite(degreesSource) ? degreesSource : legacy.query.degreesSource,
-            degreesTarget: Number.isFinite(degreesTarget) ? degreesTarget : legacy.query.degreesTarget,
-            isSubgraph: isSubgraphRaw ? isSubgraph : legacy.query.isSubgraph
         }
     };
 }
