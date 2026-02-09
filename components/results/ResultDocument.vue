@@ -39,11 +39,13 @@ const emit = defineEmits<{
 
 const copied = ref(false);
 const fullTextExpanded = ref(false);
-const citedDocsExpanded = ref(false);
 const citedDocs = ref<Citation[]>([]);
 const citedLoading = ref(false);
 const citedError = ref<string | null>(null);
 const citedLoaded = ref(false);
+// Edge-derived citation sets (populated from expand endpoint)
+const expandCitesEclis = ref<Set<string>>(new Set());
+const expandCitedByEclis = ref<Set<string>>(new Set());
 
 // Full text fetching state
 const fetchedFullText = ref<string | null>(null);
@@ -248,22 +250,58 @@ function toggleFullText() {
 	fullTextExpanded.value = !fullTextExpanded.value;
 }
 
-const hasCitedDocs = computed(() => {
+// --- Citation section computed helpers ---
+const hasCitesSection = computed(() => {
 	if (!props.citation) return false;
 	return (
 		(props.citation.cites?.length ?? 0) > 0 ||
-		(props.citation.cited_by?.length ?? 0) > 0 ||
-		(props.citation.nCited ?? 0) > 0 ||
 		(props.citation.nCiting ?? 0) > 0
 	);
 });
+const hasCitedBySection = computed(() => {
+	if (!props.citation) return false;
+	return (
+		(props.citation.cited_by?.length ?? 0) > 0 ||
+		(props.citation.nCited ?? 0) > 0
+	);
+});
 
-const citedByCount = computed(
-	() => props.citation?.cited_by?.length ?? props.citation?.nCited ?? 0,
-);
-const citesCount = computed(
-	() => props.citation?.cites?.length ?? props.citation?.nCiting ?? 0,
-);
+const citedByCount = computed(() => {
+	if (expandCitedByEclis.value.size > 0) return expandCitedByEclis.value.size;
+	if (props.citation?.cited_by?.length) return props.citation.cited_by.length;
+	return props.citation?.nCited ?? 0;
+});
+const citesCount = computed(() => {
+	if (expandCitesEclis.value.size > 0) return expandCitesEclis.value.size;
+	if (props.citation?.cites?.length) return props.citation.cites.length;
+	return props.citation?.nCiting ?? 0;
+});
+
+// Filtered lists for each section
+const citesDocsList = computed(() => {
+	if (citedDocs.value.length === 0) return [];
+	if (expandCitesEclis.value.size > 0) {
+		return citedDocs.value.filter((d) => expandCitesEclis.value.has(d.ecli));
+	}
+	if (props.citation?.cites?.length) {
+		return citedDocs.value.filter((d) => props.citation!.cites!.includes(d.ecli));
+	}
+	return [];
+});
+const citedByDocsList = computed(() => {
+	if (citedDocs.value.length === 0) return [];
+	if (expandCitedByEclis.value.size > 0) {
+		return citedDocs.value.filter((d) => expandCitedByEclis.value.has(d.ecli));
+	}
+	if (props.citation?.cited_by?.length) {
+		return citedDocs.value.filter((d) => props.citation!.cited_by!.includes(d.ecli));
+	}
+	return [];
+});
+
+// Separate expand toggles
+const citesExpanded = ref(false);
+const citedByExpanded = ref(false);
 
 async function loadCitedDocuments() {
 	if (!props.citation || citedLoaded.value) return;
@@ -271,11 +309,30 @@ async function loadCitedDocuments() {
 	citedError.value = null;
 	try {
 		const dataset = props.citation.source === "HUDOC" ? "ECHR" : "RS";
-		const result = await fetchExpandNode(props.citation.ecli, {
+		const nodeEcli = props.citation.ecli;
+		const result = await fetchExpandNode(nodeEcli, {
 			degreesSource: 1,
 			degreesTarget: 1,
 			nodeDataset: dataset,
 		});
+
+		// Derive cites/cited_by from edges
+		// Edge: source → target means "source cites target"
+		// So: source === nodeEcli → this document cites the target (outgoing)
+		//     target === nodeEcli → the source cites this document (incoming = cited by)
+		const citesSet = new Set<string>();
+		const citedBySet = new Set<string>();
+		for (const edge of result.edges) {
+			if (edge.source === nodeEcli) {
+				citesSet.add(edge.target);
+			}
+			if (edge.target === nodeEcli) {
+				citedBySet.add(edge.source);
+			}
+		}
+		expandCitesEclis.value = citesSet;
+		expandCitedByEclis.value = citedBySet;
+
 		// Transform expanded nodes to Citations (they come as ApiNode)
 		citedDocs.value = result.expandedNodes.map((node) => {
 			const d = node.data as Record<string, unknown>;
@@ -314,11 +371,20 @@ async function loadCitedDocuments() {
 	}
 }
 
-function toggleCitedDocs() {
-	citedDocsExpanded.value = !citedDocsExpanded.value;
-	if (citedDocsExpanded.value && !citedLoaded.value) {
+function ensureCitedLoaded() {
+	if (!citedLoaded.value && !citedLoading.value) {
 		loadCitedDocuments();
 	}
+}
+
+function toggleCites() {
+	citesExpanded.value = !citesExpanded.value;
+	if (citesExpanded.value) ensureCitedLoaded();
+}
+
+function toggleCitedBy() {
+	citedByExpanded.value = !citedByExpanded.value;
+	if (citedByExpanded.value) ensureCitedLoaded();
 }
 
 // Reset state when citation changes and immediately fetch full text in background
@@ -328,11 +394,14 @@ watch(
 		// Skip reset on initial mount (no old value to clean up)
 		if (oldEcli) {
 			fullTextExpanded.value = false;
-			citedDocsExpanded.value = false;
+			citesExpanded.value = false;
+			citedByExpanded.value = false;
 			citedDocs.value = [];
 			citedLoading.value = false;
 			citedError.value = null;
 			citedLoaded.value = false;
+			expandCitesEclis.value = new Set();
+			expandCitedByEclis.value = new Set();
 		// Reset full text state
 		if (fullTextAbort) fullTextAbort.abort();
 		fetchedFullText.value = null;
@@ -760,39 +829,29 @@ const metadataItems = computed(() => {
 
 			<div class="h-px bg-border" />
 
-			<!-- Cited documents (expandable with API call) -->
-			<div v-if="hasCitedDocs" class="pl-6 pr-6 py-0">
+			<!-- Cited Documents section (outgoing: documents this case cites) -->
+			<div v-if="hasCitesSection" class="pl-6 pr-6 py-0">
 				<button
 					class="flex w-full items-center justify-between py-4 text-left"
-					@click="toggleCitedDocs"
+					@click="toggleCites"
 				>
 					<div class="flex items-center gap-2">
-						<div
-							class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
-						>
+						<div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 							Cited Documents
 						</div>
 						<Badge variant="secondary" class="text-[10px] h-4 px-1.5">
-							{{ citesCount + citedByCount }}
+							{{ citesCount }}
 						</Badge>
 					</div>
-					<ChevronDown
-						v-if="!citedDocsExpanded"
-						class="h-4 w-4 text-muted-foreground/60"
-					/>
+					<ChevronDown v-if="!citesExpanded" class="h-4 w-4 text-muted-foreground/60" />
 					<ChevronUp v-else class="h-4 w-4 text-muted-foreground/60" />
 				</button>
 
-				<div v-if="citedDocsExpanded" class="pb-4 space-y-3">
+				<div v-if="citesExpanded" class="pb-4 space-y-2">
 					<!-- Loading -->
-					<div
-						v-if="citedLoading"
-						class="flex items-center justify-center py-6"
-					>
+					<div v-if="citedLoading" class="flex items-center justify-center py-6">
 						<Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
-						<span class="ml-2 text-xs text-muted-foreground"
-							>Loading citations...</span
-						>
+						<span class="ml-2 text-xs text-muted-foreground">Loading citations...</span>
 					</div>
 
 					<!-- Error -->
@@ -801,127 +860,126 @@ const metadataItems = computed(() => {
 						class="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
 					>
 						{{ citedError }}
-						<Button
-							variant="ghost"
-							size="sm"
-							class="h-6 ml-2 text-xs"
-							@click="loadCitedDocuments"
-							>Retry</Button
-						>
+						<Button variant="ghost" size="sm" class="h-6 ml-2 text-xs" @click="loadCitedDocuments">Retry</Button>
 					</div>
 
-					<!-- Cited docs list -->
-					<template v-else-if="citedDocs.length > 0">
-						<!-- Cites -->
-						<div v-if="citation.cites && citation.cites.length > 0">
-							<div
-								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-2"
+					<!-- Expanded doc cards -->
+					<template v-else-if="citesDocsList.length > 0">
+						<div class="space-y-1.5">
+							<button
+								v-for="doc in citesDocsList"
+								:key="doc.ecli"
+								class="group flex w-full items-start gap-3 rounded-lg border border-border/40 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-accent/50"
+								@click="emit('selectCitation', doc)"
 							>
-								Cites ({{ citation.cites.length }})
-							</div>
-							<div class="space-y-1.5">
-								<button
-									v-for="doc in citedDocs.filter((d) =>
-										citation!.cites?.includes(d.ecli),
-									)"
-									:key="doc.ecli"
-									class="group flex w-full items-start gap-3 rounded-lg border border-border/40 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-accent/50"
-									@click="emit('selectCitation', doc)"
+								<Badge
+									:variant="doc.source === 'HUDOC' ? 'default' : 'secondary'"
+									class="text-[10px] mt-0.5 shrink-0"
 								>
-									<Badge
-										:variant="doc.source === 'HUDOC' ? 'default' : 'secondary'"
-										class="text-[10px] mt-0.5 shrink-0"
-									>
-										{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}
-									</Badge>
-									<div class="min-w-0 flex-1">
-										<div class="text-xs font-medium text-foreground truncate">
-											{{ doc.title || doc.ecli }}
-										</div>
-										<code
-											class="text-[10px] text-muted-foreground/70 font-mono"
-											>{{ doc.ecli }}</code
-										>
+									{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}
+								</Badge>
+								<div class="min-w-0 flex-1">
+									<div class="text-xs font-medium text-foreground truncate">
+										{{ doc.title || doc.ecli }}
 									</div>
-								</button>
-							</div>
-						</div>
-
-						<!-- Cited by -->
-						<div v-if="citation.cited_by && citation.cited_by.length > 0">
-							<div
-								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-2"
-							>
-								Cited by ({{ citation.cited_by.length }})
-							</div>
-							<div class="space-y-1.5">
-								<button
-									v-for="doc in citedDocs.filter((d) =>
-										citation!.cited_by?.includes(d.ecli),
-									)"
-									:key="doc.ecli"
-									class="group flex w-full items-start gap-3 rounded-lg border border-border/40 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-accent/50"
-									@click="emit('selectCitation', doc)"
-								>
-									<Badge
-										:variant="doc.source === 'HUDOC' ? 'default' : 'secondary'"
-										class="text-[10px] mt-0.5 shrink-0"
-									>
-										{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}
-									</Badge>
-									<div class="min-w-0 flex-1">
-										<div class="text-xs font-medium text-foreground truncate">
-											{{ doc.title || doc.ecli }}
-										</div>
-										<code
-											class="text-[10px] text-muted-foreground/70 font-mono"
-											>{{ doc.ecli }}</code
-										>
-									</div>
-								</button>
-							</div>
+									<code class="text-[10px] text-muted-foreground/70 font-mono">{{ doc.ecli }}</code>
+								</div>
+							</button>
 						</div>
 					</template>
 
-					<!-- No expanded data but we have ECLI lists -->
-					<template v-else-if="!citedLoading">
-						<div v-if="citation.cites && citation.cites.length > 0">
+					<!-- Fallback: ECLI-only list (no expanded data) -->
+					<template v-else-if="!citedLoading && (citation.cites?.length ?? 0) > 0">
+						<div class="space-y-1">
 							<div
-								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-2"
+								v-for="ecli in citation.cites"
+								:key="ecli"
+								class="text-xs font-mono text-muted-foreground/80 truncate"
 							>
-								Cites ({{ citation.cites.length }})
-							</div>
-							<div class="space-y-1">
-								<div
-									v-for="ecli in citation.cites"
-									:key="ecli"
-									class="text-xs font-mono text-muted-foreground/80 truncate"
-								>
-									{{ ecli }}
-								</div>
-							</div>
-						</div>
-						<div v-if="citation.cited_by && citation.cited_by.length > 0">
-							<div
-								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-2"
-							>
-								Cited by ({{ citation.cited_by.length }})
-							</div>
-							<div class="space-y-1">
-								<div
-									v-for="ecli in citation.cited_by"
-									:key="ecli"
-									class="text-xs font-mono text-muted-foreground/80 truncate"
-								>
-									{{ ecli }}
-								</div>
+								{{ ecli }}
 							</div>
 						</div>
 					</template>
 				</div>
 			</div>
 
-			<div v-if="hasCitedDocs" class="h-px bg-border" />
+			<div v-if="hasCitesSection" class="h-px bg-border" />
+
+			<!-- Cited By section (incoming: documents that cite this case) -->
+			<div v-if="hasCitedBySection" class="pl-6 pr-6 py-0">
+				<button
+					class="flex w-full items-center justify-between py-4 text-left"
+					@click="toggleCitedBy"
+				>
+					<div class="flex items-center gap-2">
+						<div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+							Cited By
+						</div>
+						<Badge variant="secondary" class="text-[10px] h-4 px-1.5">
+							{{ citedByCount }}
+						</Badge>
+					</div>
+					<ChevronDown v-if="!citedByExpanded" class="h-4 w-4 text-muted-foreground/60" />
+					<ChevronUp v-else class="h-4 w-4 text-muted-foreground/60" />
+				</button>
+
+				<div v-if="citedByExpanded" class="pb-4 space-y-2">
+					<!-- Loading -->
+					<div v-if="citedLoading" class="flex items-center justify-center py-6">
+						<Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
+						<span class="ml-2 text-xs text-muted-foreground">Loading citations...</span>
+					</div>
+
+					<!-- Error -->
+					<div
+						v-else-if="citedError"
+						class="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
+					>
+						{{ citedError }}
+						<Button variant="ghost" size="sm" class="h-6 ml-2 text-xs" @click="loadCitedDocuments">Retry</Button>
+					</div>
+
+					<!-- Expanded doc cards -->
+					<template v-else-if="citedByDocsList.length > 0">
+						<div class="space-y-1.5">
+							<button
+								v-for="doc in citedByDocsList"
+								:key="doc.ecli"
+								class="group flex w-full items-start gap-3 rounded-lg border border-border/40 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-accent/50"
+								@click="emit('selectCitation', doc)"
+							>
+								<Badge
+									:variant="doc.source === 'HUDOC' ? 'default' : 'secondary'"
+									class="text-[10px] mt-0.5 shrink-0"
+								>
+									{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}
+								</Badge>
+								<div class="min-w-0 flex-1">
+									<div class="text-xs font-medium text-foreground truncate">
+										{{ doc.title || doc.ecli }}
+									</div>
+									<code class="text-[10px] text-muted-foreground/70 font-mono">{{ doc.ecli }}</code>
+								</div>
+							</button>
+						</div>
+					</template>
+
+					<!-- Fallback: ECLI-only list (no expanded data) -->
+					<template v-else-if="!citedLoading && (citation.cited_by?.length ?? 0) > 0">
+						<div class="space-y-1">
+							<div
+								v-for="ecli in citation.cited_by"
+								:key="ecli"
+								class="text-xs font-mono text-muted-foreground/80 truncate"
+							>
+								{{ ecli }}
+							</div>
+						</div>
+					</template>
+				</div>
+			</div>
+
+			<div v-if="hasCitedBySection" class="h-px bg-border" />
 
 			<!-- Bottom padding -->
 			<div class="h-16" />

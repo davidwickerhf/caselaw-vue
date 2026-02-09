@@ -142,6 +142,8 @@ export type SearchFacets = {
     sources: FacetItem[];
     years: FacetItem[];
     articles: FacetItem[];
+    articlesApplied: FacetItem[];
+    articlesNonViolated: FacetItem[];
     respondentStates: FacetItem[];
     documentTypes: FacetItem[];
     importance: FacetItem[];
@@ -285,7 +287,7 @@ export function createDefaultSearchQuery(): SearchQuery {
         sortBy: 'date',
         sortDirection: 'desc',
         page: 1,
-        pageSize: 50,
+        pageSize: 10,
         scoped: {
             echr: {
                 text: '',

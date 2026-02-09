@@ -111,6 +111,8 @@ export function computeFacets(cases: Citation[]): SearchFacets {
 		sources: facetMap((c) => c.source),
 		years: facetMap((c) => (c.year > 0 ? c.year : undefined)),
 		articles: facetMap((c) => c.article_violated),
+		articlesApplied: facetMap((c) => c.article_applied),
+		articlesNonViolated: facetMap((c) => c.article_non_violated),
 		respondentStates: facetMap((c) => c.respondent_state),
 		documentTypes: facetMap((c) => c.document_type),
 		importance: facetMap((c) => c.importance),
@@ -143,6 +145,8 @@ export function mapServerFacets(
 		],
 		years: [],
 		articles: toFacetItems(raw.echr_article_violated),
+		articlesApplied: toFacetItems(raw.echr_article_applied),
+		articlesNonViolated: toFacetItems(raw.echr_article_non_violated),
 		respondentStates: toFacetItems(raw.echr_respondent_state),
 		documentTypes: [
 			...toFacetItems(raw.rs_document_type),

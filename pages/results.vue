@@ -66,6 +66,59 @@ const smartSearch = useSmartSearch();
 
 const viewMode = ref<"compact" | "expanded">("expanded");
 const filtersCollapsed = ref(false);
+
+// --- Resizable panels ---
+const FILTER_MIN = 200;
+const FILTER_MAX = 420;
+const FILTER_DEFAULT = 288; // w-72
+const DOC_MIN = 320;
+const DOC_MAX_RATIO = 0.6; // max 60% of container
+const DOC_DEFAULT_RATIO = 0.45; // 45%
+
+const filterWidth = ref(FILTER_DEFAULT);
+const docWidthRatio = ref(DOC_DEFAULT_RATIO);
+let resizingPanel: "filter" | "doc" | null = null;
+let resizeStartX = 0;
+let resizeStartValue = 0;
+let containerWidth = 0;
+
+function onResizeStart(event: MouseEvent, panel: "filter" | "doc") {
+	event.preventDefault();
+	resizingPanel = panel;
+	resizeStartX = event.clientX;
+	if (panel === "filter") {
+		resizeStartValue = filterWidth.value;
+	} else {
+		const container = (event.target as HTMLElement).closest("[data-resize-container]");
+		containerWidth = container?.clientWidth || window.innerWidth;
+		resizeStartValue = docWidthRatio.value * containerWidth;
+	}
+	document.addEventListener("mousemove", onResizeMove);
+	document.addEventListener("mouseup", onResizeEnd);
+	document.body.style.cursor = "col-resize";
+	document.body.style.userSelect = "none";
+}
+
+function onResizeMove(event: MouseEvent) {
+	if (!resizingPanel) return;
+	const dx = event.clientX - resizeStartX;
+	if (resizingPanel === "filter") {
+		filterWidth.value = Math.min(FILTER_MAX, Math.max(FILTER_MIN, resizeStartValue + dx));
+	} else {
+		// Dragging left edge of doc panel: moving left = wider doc, moving right = narrower
+		const newPx = Math.max(DOC_MIN, resizeStartValue - dx);
+		const maxPx = containerWidth * DOC_MAX_RATIO;
+		docWidthRatio.value = Math.min(maxPx, newPx) / containerWidth;
+	}
+}
+
+function onResizeEnd() {
+	resizingPanel = null;
+	document.removeEventListener("mousemove", onResizeMove);
+	document.removeEventListener("mouseup", onResizeEnd);
+	document.body.style.cursor = "";
+	document.body.style.userSelect = "";
+}
 const syncingRoute = ref(false);
 const syncingSmartSearch = ref(false);
 const queryBuilderOpen = ref(false);
@@ -236,7 +289,10 @@ function hasFilterKey(
 
 function extractFilterState(query: SearchQuery): Partial<SearchQuery> {
 	const next: Partial<SearchQuery> = {};
-	if (query.sources?.length) next.sources = [...query.sources];
+	const defaultSources = createDefaultSearchQuery().sources;
+	if (query.sources?.length && query.sources.join(',') !== defaultSources.join(',')) {
+		next.sources = [...query.sources];
+	}
 	if (query.articleViolated.length) next.articleViolated = [...query.articleViolated];
 	if (query.articleApplied.length) next.articleApplied = [...query.articleApplied];
 	if (query.articleNonViolated.length)
@@ -327,7 +383,8 @@ function appendFilterParams(
 		if (!value || value.length === 0) return;
 		params.set(key, value.join(","));
 	};
-	if (filters.sources && filters.sources.length) {
+	const defaultSources = createDefaultSearchQuery().sources;
+	if (filters.sources && filters.sources.length && filters.sources.join(",") !== defaultSources.join(",")) {
 		params.set("sources", filters.sources.join(","));
 	}
 	setList("articleViolated", filters.articleViolated as string[] | undefined);
@@ -1445,11 +1502,12 @@ function handleFindSimilar(citation: Citation) {
 				</div>
 
 				<!-- Main content -->
-				<div class="mx-auto flex w-full min-h-0 flex-1 gap-0 px-0">
+				<div class="mx-auto flex w-full min-h-0 flex-1 gap-0 px-0" data-resize-container>
 					<!-- Left sidebar: Filters -->
 					<aside
 						v-if="store.results.value && !filtersCollapsed"
-						class="shrink-0 border-r border-border pt-4 pr-0 pb-0 pl-0 h-full overflow-hidden w-72"
+						class="shrink-0 pt-4 pr-0 pb-0 pl-0 h-full overflow-hidden"
+						:style="{ width: filterWidth + 'px' }"
 					>
 						<ResultFilters
 							:facets="store.results.value.facets"
@@ -1458,6 +1516,14 @@ function handleFindSimilar(citation: Citation) {
 							@toggle-collapse="filtersCollapsed = true"
 						/>
 					</aside>
+					<!-- Filter resize handle -->
+					<div
+						v-if="store.results.value && !filtersCollapsed"
+						class="drag-handle shrink-0 relative z-10"
+						@mousedown="onResizeStart($event, 'filter')"
+					>
+						<div class="h-full w-px bg-border" />
+					</div>
 
 					<!-- Center: Results -->
 					<section
@@ -1626,8 +1692,17 @@ function handleFindSimilar(citation: Citation) {
 
 					<!-- Inline document view (full height) -->
 					<template v-if="store.detailOpen.value">
-						<div class="w-px self-stretch bg-border shrink-0" />
-						<aside class="w-[45%] shrink-0 min-h-0 overflow-hidden">
+						<!-- Document resize handle -->
+						<div
+							class="drag-handle shrink-0 relative z-10"
+							@mousedown="onResizeStart($event, 'doc')"
+						>
+							<div class="h-full w-px bg-border" />
+						</div>
+						<aside
+							class="shrink-0 min-h-0 overflow-hidden"
+							:style="{ width: (docWidthRatio * 100) + '%' }"
+						>
 							<ResultDocument
 								:citation="store.selectedResult.value"
 								@close="store.closeDetail()"
@@ -1730,5 +1805,14 @@ function handleFindSimilar(citation: Citation) {
 	100% {
 		transform: translateX(-50%);
 	}
+}
+
+/* Drag handle for resizable panels */
+.drag-handle {
+	width: 5px;
+	cursor: col-resize;
+	display: flex;
+	align-items: stretch;
+	justify-content: center;
 }
 </style>

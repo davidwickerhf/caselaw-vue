@@ -19,6 +19,8 @@ const emit = defineEmits<{
 const expandedSections = ref<Set<string>>(new Set([
   'sources',
   'articles',
+  'articlesApplied',
+  'articlesNonViolated',
   'respondentStates',
   'documentTypes',
   'importance',
@@ -49,7 +51,13 @@ const activeFilters = computed(() => {
     chips.push({ label: state, onremove: () => emit('change', { respondentState: props.query.respondentState.filter((s) => s !== state) }) })
   }
   for (const art of props.query.articleViolated) {
-    chips.push({ label: `Art. ${art}`, onremove: () => emit('change', { articleViolated: props.query.articleViolated.filter((a) => a !== art) }) })
+    chips.push({ label: `Violated: Art. ${art}`, onremove: () => emit('change', { articleViolated: props.query.articleViolated.filter((a) => a !== art) }) })
+  }
+  for (const art of props.query.articleApplied) {
+    chips.push({ label: `Applied: Art. ${art}`, onremove: () => emit('change', { articleApplied: props.query.articleApplied.filter((a) => a !== art) }) })
+  }
+  for (const art of props.query.articleNonViolated) {
+    chips.push({ label: `Not violated: Art. ${art}`, onremove: () => emit('change', { articleNonViolated: props.query.articleNonViolated.filter((a) => a !== art) }) })
   }
   for (const dt of props.query.documentType) {
     chips.push({ label: dt, onremove: () => emit('change', { documentType: props.query.documentType.filter((d) => d !== dt) }) })
@@ -67,8 +75,21 @@ const activeFilters = computed(() => {
   return chips
 })
 
+// Map between display names (facets) and internal DataSource values
+const SOURCE_DISPLAY_TO_INTERNAL: Record<string, string> = { 'Rechtspraak': 'RS', 'HUDOC': 'ECHR' }
+const SOURCE_INTERNAL_TO_DISPLAY: Record<string, string> = { 'RS': 'Rechtspraak', 'ECHR': 'HUDOC' }
+
 function toggleFacetValue(field: keyof SearchQuery, value: string) {
   const current = props.query[field] as string[]
+  if (field === 'sources') {
+    const internal = SOURCE_DISPLAY_TO_INTERNAL[value] || value
+    if (current.includes(internal)) {
+      emit('change', { [field]: current.filter((v) => v !== internal) })
+    } else {
+      emit('change', { [field]: [...current, internal] })
+    }
+    return
+  }
   if (current.includes(value)) {
     emit('change', { [field]: current.filter((v) => v !== value) })
   } else {
@@ -84,25 +105,32 @@ function toggleImportanceFacet(value: number) {
   }
 }
 
+// Source scope for each filter section
+type SourceScope = 'ECHR' | 'RS' | 'all'
+
 type FacetSection = {
   key: string
   label: string
+  source: SourceScope
   items: { value: string; count: number }[]
   field: keyof SearchQuery
   activeValues: string[] | number[]
   isNumeric?: boolean
+  formatValue?: (v: string) => string
 }
 
 const sections = computed<FacetSection[]>(() =>
   ([
-    { key: 'sources', label: 'Source', items: props.facets.sources, field: 'sources' as keyof SearchQuery, activeValues: (props.query.sources?.length ?? 0) >= 2 ? [] : (props.query.sources || []) },
-    { key: 'articles', label: 'Articles Violated', items: props.facets.articles.slice(0, 15), field: 'articleViolated' as keyof SearchQuery, activeValues: props.query.articleViolated },
-    { key: 'respondentStates', label: 'Respondent State', items: props.facets.respondentStates.slice(0, 15), field: 'respondentState' as keyof SearchQuery, activeValues: props.query.respondentState },
-    { key: 'documentTypes', label: 'Document Type', items: props.facets.documentTypes, field: 'documentType' as keyof SearchQuery, activeValues: props.query.documentType },
-    { key: 'importance', label: 'Importance', items: props.facets.importance, field: 'importance' as keyof SearchQuery, activeValues: props.query.importance, isNumeric: true },
-    { key: 'years', label: 'Year', items: props.facets.years.slice(0, 10), field: 'dateStart' as keyof SearchQuery, activeValues: [] },
-    { key: 'instances', label: 'Court Instance', items: props.facets.instances.slice(0, 10), field: 'instances' as keyof SearchQuery, activeValues: props.query.instances },
-    { key: 'domains', label: 'Legal Domain', items: props.facets.domains.slice(0, 10), field: 'domains' as keyof SearchQuery, activeValues: props.query.domains }
+    { key: 'sources', label: 'Source', source: 'all' as SourceScope, items: props.facets.sources, field: 'sources' as keyof SearchQuery, activeValues: (props.query.sources?.length ?? 0) >= 2 ? [] : (props.query.sources || []).map((s) => SOURCE_INTERNAL_TO_DISPLAY[s] || s) },
+    { key: 'documentTypes', label: 'Document Type', source: 'all' as SourceScope, items: props.facets.documentTypes, field: 'documentType' as keyof SearchQuery, activeValues: props.query.documentType },
+    { key: 'articles', label: 'Articles Violated', source: 'ECHR' as SourceScope, items: props.facets.articles.slice(0, 15), field: 'articleViolated' as keyof SearchQuery, activeValues: props.query.articleViolated, formatValue: (v: string) => `Art. ${v}` },
+    { key: 'articlesApplied', label: 'Articles Applied', source: 'ECHR' as SourceScope, items: (props.facets.articlesApplied ?? []).slice(0, 15), field: 'articleApplied' as keyof SearchQuery, activeValues: props.query.articleApplied, formatValue: (v: string) => `Art. ${v}` },
+    { key: 'articlesNonViolated', label: 'Articles Not Violated', source: 'ECHR' as SourceScope, items: (props.facets.articlesNonViolated ?? []).slice(0, 15), field: 'articleNonViolated' as keyof SearchQuery, activeValues: props.query.articleNonViolated, formatValue: (v: string) => `Art. ${v}` },
+    { key: 'respondentStates', label: 'Respondent State', source: 'ECHR' as SourceScope, items: props.facets.respondentStates.slice(0, 15), field: 'respondentState' as keyof SearchQuery, activeValues: props.query.respondentState },
+    { key: 'importance', label: 'Importance', source: 'ECHR' as SourceScope, items: props.facets.importance, field: 'importance' as keyof SearchQuery, activeValues: props.query.importance, isNumeric: true },
+    { key: 'years', label: 'Year', source: 'all' as SourceScope, items: props.facets.years.slice(0, 10), field: 'dateStart' as keyof SearchQuery, activeValues: [] },
+    { key: 'instances', label: 'Court Instance', source: 'RS' as SourceScope, items: props.facets.instances.slice(0, 10), field: 'instances' as keyof SearchQuery, activeValues: props.query.instances },
+    { key: 'domains', label: 'Legal Domain', source: 'RS' as SourceScope, items: props.facets.domains.slice(0, 10), field: 'domains' as keyof SearchQuery, activeValues: props.query.domains }
   ] as FacetSection[]).filter((s) => s.items.length > 0)
 )
 
@@ -117,6 +145,12 @@ function isActive(section: FacetSection, itemValue: string): boolean {
   }
   return (section.activeValues as string[]).includes(itemValue)
 }
+
+function formatItemValue(section: FacetSection, value: string): string {
+  if (section.formatValue) return section.formatValue(value)
+  if (section.key === 'importance') return getImportanceLabel(value)
+  return value
+}
 </script>
 
 <template>
@@ -127,7 +161,7 @@ function isActive(section: FacetSection, itemValue: string): boolean {
     </Button>
   </template>
   <div v-else class="flex h-full w-full shrink-0 flex-col">
-    <div class="flex items-center justify-between mb-3 px-4">
+    <div class="flex items-center justify-between mb-2 px-4">
       <h3 class="text-sm font-semibold text-foreground flex items-center gap-1.5">
         <Filter class="h-4 w-4" />
         Filters
@@ -138,7 +172,7 @@ function isActive(section: FacetSection, itemValue: string): boolean {
     </div>
 
     <!-- Active filter chips -->
-    <div v-if="activeFilters.length > 0" class="flex flex-wrap gap-1 mb-3 pb-3 border-b border-border px-4">
+    <div v-if="activeFilters.length > 0" class="flex flex-wrap gap-1 pb-3 px-4">
       <Badge v-for="(chip, i) in activeFilters" :key="i" variant="secondary" class="gap-1 pr-1 text-[10px]">
         {{ chip.label }}
         <button class="ml-0.5 rounded-md hover:bg-muted-foreground/20" @click="chip.onremove()">
@@ -147,20 +181,34 @@ function isActive(section: FacetSection, itemValue: string): boolean {
       </Badge>
     </div>
 
+    <!-- Separator (always visible) -->
+    <div class="h-px bg-border" />
+
     <!-- Facet sections -->
     <div class="flex-1 overflow-y-auto pr-0 pb-16">
       <div
         v-for="(section, idx) in sections"
         :key="section.key"
-        :class="['border-b border-border pb-2 px-4', idx === sections.length - 1 ? 'border-b-0' : '']"
+        :class="['border-b border-border px-4', idx === sections.length - 1 ? 'border-b-0' : '', expandedSections.has(section.key) ? 'pb-2' : '']"
       >
         <button
-          class="flex w-full items-center justify-between py-2 text-sm font-medium text-foreground hover:text-foreground/80 transition-colors"
+          class="flex w-full items-center justify-between py-2.5 text-left"
           @click="toggleSection(section.key)"
         >
-          {{ section.label }}
-          <ChevronDown v-if="expandedSections.has(section.key)" class="h-3.5 w-3.5 text-muted-foreground" />
-          <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              {{ section.label }}
+            </span>
+            <Badge
+              v-if="section.source !== 'all'"
+              :variant="section.source === 'ECHR' ? 'default' : 'secondary'"
+              class="text-[9px] h-3.5 px-1 font-medium"
+            >
+              {{ section.source === 'ECHR' ? 'ECHR' : 'RS' }}
+            </Badge>
+          </div>
+          <ChevronDown v-if="expandedSections.has(section.key)" class="h-3.5 w-3.5 text-muted-foreground/60" />
+          <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground/60" />
         </button>
         <div v-if="expandedSections.has(section.key)" class="space-y-0.5 pb-1">
           <button
@@ -176,7 +224,7 @@ function isActive(section: FacetSection, itemValue: string): boolean {
             }"
           >
             <span class="truncate text-left">
-              {{ section.key === 'importance' ? getImportanceLabel(item.value) : section.key === 'articles' ? `Art. ${item.value}` : item.value }}
+              {{ formatItemValue(section, item.value) }}
             </span>
             <Badge variant="outline" class="ml-2 h-4 text-[10px] shrink-0">{{ item.count }}</Badge>
           </button>
