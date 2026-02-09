@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ArrowUp, ArrowDown, List, LayoutGrid } from 'lucide-vue-next'
-import Button from '~/components/ui/button/Button.vue'
 
 const props = defineProps<{
   sortBy: string
@@ -30,15 +29,15 @@ function handleSort(value: string) {
 </script>
 
 <template>
-  <div class="flex items-center justify-between gap-4">
-    <div class="flex items-center gap-3">
-      <span class="text-[10px] uppercase tracking-wider text-muted-foreground/70">Sort by</span>
-    <div class="inline-flex items-center rounded-lg border border-border/60 bg-muted/30 p-1 shadow-sm">
+  <div class="flex items-center gap-3">
+    <!-- Sort controls -->
+    <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 shrink-0">Sort by</span>
+    <div class="inline-flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5">
       <button
         v-for="option in sortOptions"
         :key="option.value"
         :class="[
-          'inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-semibold transition-all',
+          'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all',
           sortBy === option.value
             ? 'bg-foreground text-background shadow-sm'
             : 'text-muted-foreground hover:text-foreground hover:bg-background/40',
@@ -54,12 +53,12 @@ function handleSort(value: string) {
         </template>
       </button>
     </div>
-    </div>
 
-    <div class="inline-flex items-center rounded-lg border border-border/60 bg-muted/30 p-1 shadow-sm">
+    <!-- View toggle -->
+    <div class="inline-flex items-center rounded-lg border border-border/60 bg-muted/30 p-0.5">
       <button
         :class="[
-          'inline-flex h-7 w-7 items-center justify-center rounded-md transition-all',
+          'inline-flex h-6 w-6 items-center justify-center rounded-md transition-all',
           viewMode === 'expanded'
             ? 'bg-foreground text-background shadow-sm'
             : 'text-muted-foreground hover:text-foreground hover:bg-background/40'
@@ -67,11 +66,11 @@ function handleSort(value: string) {
         @click="emit('viewChange', 'expanded')"
         aria-label="Expanded view"
       >
-        <LayoutGrid class="h-3.5 w-3.5" />
+        <LayoutGrid class="h-3 w-3" />
       </button>
       <button
         :class="[
-          'inline-flex h-7 w-7 items-center justify-center rounded-md transition-all',
+          'inline-flex h-6 w-6 items-center justify-center rounded-md transition-all',
           viewMode === 'compact'
             ? 'bg-foreground text-background shadow-sm'
             : 'text-muted-foreground hover:text-foreground hover:bg-background/40'
@@ -79,7 +78,7 @@ function handleSort(value: string) {
         @click="emit('viewChange', 'compact')"
         aria-label="Compact view"
       >
-        <List class="h-3.5 w-3.5" />
+        <List class="h-3 w-3" />
       </button>
     </div>
   </div>

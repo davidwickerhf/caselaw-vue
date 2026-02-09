@@ -1587,75 +1587,78 @@ function handleFindSimilar(citation: Citation) {
 						<!-- Results -->
 						<div
 							v-else-if="store.results.value"
-							class="flex min-h-0 flex-1 flex-col gap-4"
+							class="flex min-h-0 flex-1 flex-col gap-0"
 						>
-							<!-- Stats -->
-							<ResultStats
-								:total="store.results.value.total"
-								:total-is-exact="store.results.value.totalIsExact"
-								:rs-total="store.results.value.rsTotal"
-								:echr-total="store.results.value.echrTotal"
-								:has-more="!!store.results.value.nextCursor"
-								:loading-more="store.results.value.loadingMore"
-								:ai-summary="store.results.value.aiSummary"
-								:did-you-mean="store.results.value.didYouMean"
-								@did-you-mean="handleDidYouMean"
-							>
+							<!-- Toolbar: stats + sort + actions -->
+							<div class="flex flex-col gap-2.5 pb-4">
+								<!-- Row 1: Filter button + result count + bulk actions -->
+								<div class="flex items-center justify-between gap-3 flex-wrap">
+									<ResultStats
+										:total="store.results.value.total"
+										:total-is-exact="store.results.value.totalIsExact"
+										:rs-total="store.results.value.rsTotal"
+										:echr-total="store.results.value.echrTotal"
+										:has-more="!!store.results.value.nextCursor"
+										:loading-more="store.results.value.loadingMore"
+										:ai-summary="store.results.value.aiSummary"
+										:did-you-mean="store.results.value.didYouMean"
+										@did-you-mean="handleDidYouMean"
+									>
 								<template #countPrefix>
-									<Button
-										variant="outline"
-										size="sm"
-										class="h-7 gap-1.5"
+									<button
+										class="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition-all hover:text-foreground hover:bg-muted/50"
 										@click="filtersCollapsed = !filtersCollapsed"
 									>
-										<Filter class="h-3.5 w-3.5" />
+										<Filter class="h-3 w-3" />
 										Filters
-									</Button>
+									</button>
 								</template>
-							</ResultStats>
+									</ResultStats>
+									<BulkActions
+										:selected-count="store.selectedCount.value"
+										:total-count="store.results.value.results.length"
+										:disabled="store.loading.value"
+										@select-all="store.selectAll()"
+										@clear="store.clearSelection()"
+										@export="(format) => store.exportSelected(format)"
+									/>
+								</div>
 
-							<!-- Sort & bulk actions row -->
-							<div class="flex items-center justify-between gap-4">
-								<ResultSort
-									:sort-by="store.query.value.sortBy"
-									:sort-direction="store.query.value.sortDirection"
-									:view-mode="viewMode"
-									:disabled="store.loading.value"
-									@change="
-										(sortBy: string, dir: string) => {
-											store.resetPagination();
-											const requestGroup = buildEffectiveGroup(
-												smartSearch.queryBuilderGroup.value,
-												filterState,
-											);
-											applyQueryAndSearch(
-												{
-													...store.query.value,
-													sortBy: sortBy as
-														| 'date'
-														| 'citations',
-													sortDirection: dir as 'asc' | 'desc',
-													page: 1,
-													cursor: undefined,
-												},
-												true,
-												{
-													baseGroup: smartSearch.queryBuilderGroup.value,
-													requestGroup,
-												},
-											);
-										}
-									"
-									@view-change="(mode) => (viewMode = mode)"
-								/>
-								<BulkActions
-									:selected-count="store.selectedCount.value"
-									:total-count="store.results.value.results.length"
-									:disabled="store.loading.value"
-									@select-all="store.selectAll()"
-									@clear="store.clearSelection()"
-									@export="(format) => store.exportSelected(format)"
-								/>
+								<!-- Row 2: Sort + view toggle -->
+								<div class="flex items-center justify-between gap-3 flex-wrap">
+									<ResultSort
+										:sort-by="store.query.value.sortBy"
+										:sort-direction="store.query.value.sortDirection"
+										:view-mode="viewMode"
+										:disabled="store.loading.value"
+										@change="
+											(sortBy: string, dir: string) => {
+												store.resetPagination();
+												const requestGroup = buildEffectiveGroup(
+													smartSearch.queryBuilderGroup.value,
+													filterState,
+												);
+												applyQueryAndSearch(
+													{
+														...store.query.value,
+														sortBy: sortBy as
+															| 'date'
+															| 'citations',
+														sortDirection: dir as 'asc' | 'desc',
+														page: 1,
+														cursor: undefined,
+													},
+													true,
+													{
+														baseGroup: smartSearch.queryBuilderGroup.value,
+														requestGroup,
+													},
+												);
+											}
+										"
+										@view-change="(mode) => (viewMode = mode)"
+									/>
+								</div>
 							</div>
 
 						<!-- Results list -->

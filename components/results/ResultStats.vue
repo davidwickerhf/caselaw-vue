@@ -22,31 +22,34 @@ const summaryExpanded = ref(false)
 </script>
 
 <template>
-  <div class="space-y-3">
-    <!-- Result count -->
-    <div class="flex items-center justify-between">
-      <div class="text-sm text-muted-foreground flex items-center gap-2">
-        <slot name="countPrefix" />
-        <template v-if="totalIsExact || !hasMore">
-          <span class="font-semibold text-foreground">{{ total }}</span>
-          result{{ total !== 1 ? 's' : '' }} found
-        </template>
-        <template v-else>
-          <span class="font-semibold text-foreground">{{ total }}+</span>
-          results found
-        </template>
-        <span v-if="rsTotal != null && echrTotal != null" class="text-muted-foreground">
-          ({{ rsTotal }} Rechtspraak · {{ echrTotal }} ECHR)
+  <div class="space-y-2">
+    <!-- Result count line -->
+    <div class="flex items-center gap-2 flex-wrap">
+      <slot name="countPrefix" />
+
+      <div class="flex items-baseline gap-1.5 text-xs text-muted-foreground">
+        <span class="text-sm font-semibold text-foreground tabular-nums">
+          <template v-if="totalIsExact || !hasMore">{{ total }}</template>
+          <template v-else>{{ total }}+</template>
         </span>
-        <span v-if="loadingMore" class="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2 class="h-3 w-3 animate-spin" />
-          loading more...
-        </span>
+        <span>result{{ total !== 1 ? 's' : '' }}</span>
+        <template v-if="rsTotal != null && echrTotal != null">
+          <span class="text-muted-foreground/50">&middot;</span>
+          <span class="tabular-nums">{{ rsTotal }}</span>
+          <span class="text-muted-foreground/60">RS</span>
+          <span class="text-muted-foreground/50">&middot;</span>
+          <span class="tabular-nums">{{ echrTotal }}</span>
+          <span class="text-muted-foreground/60">ECHR</span>
+        </template>
       </div>
+
+      <span v-if="loadingMore" class="inline-flex items-center gap-1 text-[10px] text-muted-foreground/60 ml-1">
+        <Loader2 class="h-3 w-3 animate-spin" />
+      </span>
     </div>
 
     <!-- Did you mean -->
-    <div v-if="didYouMean" class="text-sm text-muted-foreground">
+    <div v-if="didYouMean" class="text-xs text-muted-foreground">
       Did you mean:
       <button
         class="font-medium text-primary hover:underline"

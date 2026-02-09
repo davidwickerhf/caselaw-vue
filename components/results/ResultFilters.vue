@@ -127,7 +127,7 @@ const sections = computed<FacetSection[]>(() =>
     { key: 'articlesApplied', label: 'Articles Applied', source: 'ECHR' as SourceScope, items: (props.facets.articlesApplied ?? []).slice(0, 15), field: 'articleApplied' as keyof SearchQuery, activeValues: props.query.articleApplied, formatValue: (v: string) => `Art. ${v}` },
     { key: 'articlesNonViolated', label: 'Articles Not Violated', source: 'ECHR' as SourceScope, items: (props.facets.articlesNonViolated ?? []).slice(0, 15), field: 'articleNonViolated' as keyof SearchQuery, activeValues: props.query.articleNonViolated, formatValue: (v: string) => `Art. ${v}` },
     { key: 'respondentStates', label: 'Respondent State', source: 'ECHR' as SourceScope, items: props.facets.respondentStates.slice(0, 15), field: 'respondentState' as keyof SearchQuery, activeValues: props.query.respondentState },
-    { key: 'importance', label: 'Importance', source: 'ECHR' as SourceScope, items: props.facets.importance, field: 'importance' as keyof SearchQuery, activeValues: props.query.importance, isNumeric: true },
+    { key: 'importance', label: 'Importance', source: 'ECHR' as SourceScope, items: [...props.facets.importance].sort((a, b) => Number(a.value) - Number(b.value)), field: 'importance' as keyof SearchQuery, activeValues: props.query.importance, isNumeric: true },
     { key: 'years', label: 'Year', source: 'all' as SourceScope, items: props.facets.years.slice(0, 10), field: 'dateStart' as keyof SearchQuery, activeValues: [] },
     { key: 'instances', label: 'Court Instance', source: 'RS' as SourceScope, items: props.facets.instances.slice(0, 10), field: 'instances' as keyof SearchQuery, activeValues: props.query.instances },
     { key: 'domains', label: 'Legal Domain', source: 'RS' as SourceScope, items: props.facets.domains.slice(0, 10), field: 'domains' as keyof SearchQuery, activeValues: props.query.domains }
@@ -135,7 +135,7 @@ const sections = computed<FacetSection[]>(() =>
 )
 
 function getImportanceLabel(value: string): string {
-  const labels: Record<string, string> = { '1': 'Key case', '2': 'Important', '3': 'Moderate', '4': 'Low' }
+  const labels: Record<string, string> = { '1': 'Key case', '2': 'Important', '3': 'Moderate', '4': 'Low importance' }
   return labels[value] || value
 }
 
