@@ -1778,7 +1778,7 @@ function handleFindSimilar(citation: Citation) {
 							<div class="h-full w-px bg-border" />
 						</div>
 						<aside
-							class="shrink-0 min-h-0 overflow-hidden"
+							class="shrink-0 h-full min-h-0 overflow-hidden"
 							:style="{ width: (docWidthRatio * 100) + '%' }"
 						>
 							<ResultDocument

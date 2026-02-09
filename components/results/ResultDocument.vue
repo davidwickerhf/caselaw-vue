@@ -2,14 +2,12 @@
 import { ref, computed, watch } from "vue";
 import {
 	ExternalLink,
-	BookOpen,
 	Star,
 	Calendar,
 	MapPin,
 	FileText,
 	Tag,
 	Scale,
-	Search,
 	Copy,
 	Check,
 	X,
@@ -127,6 +125,13 @@ function openOriginalDocument() {
 	if (!props.citation?.url_publication) return;
 	if (typeof window === "undefined") return;
 	window.open(props.citation.url_publication, "_blank");
+}
+
+function openDocumentPage() {
+	if (!props.citation) return;
+	if (typeof window === "undefined") return;
+	const url = `/document/${encodeURIComponent(props.citation.ecli)}`;
+	window.open(url, "_blank");
 }
 
 const date = computed(
@@ -479,89 +484,100 @@ const metadataItems = computed(() => {
 </script>
 
 <template>
-	<div v-if="citation" class="h-full overflow-y-auto">
-		<div class="space-y-0">
-			<!-- Document header -->
-			<div class="pl-6 pr-6 pt-5 pb-4">
-				<div class="flex items-start justify-between gap-3">
-					<div class="min-w-0 flex-1">
-						<div class="flex flex-wrap items-center gap-2 mb-2">
-							<Badge
-								:variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
-								class="text-xs"
-							>
-								{{ citation.source === "HUDOC" ? "ECHR" : "Rechtspraak" }}
-							</Badge>
-							<span
-								v-if="importanceLabel"
-								class="inline-flex items-center gap-0.5 text-xs text-amber-600 dark:text-amber-400"
-							>
-								<Star class="h-3 w-3 fill-current" />
-								{{ importanceLabel }}
-							</span>
-						</div>
-						<h2 class="text-lg font-semibold leading-tight text-foreground">
-							{{ citation.title || citation.ecli }}
-						</h2>
-						<div class="flex items-center gap-1.5 mt-2">
-							<code class="text-xs text-muted-foreground font-mono">{{
-								citation.ecli
-							}}</code>
-							<Button
-								variant="ghost"
-								size="icon"
-								class="h-5 w-5"
-								@click="copyEcli"
-							>
-								<Check v-if="copied" class="h-3 w-3 text-emerald-500" />
-								<Copy v-else class="h-3 w-3" />
-							</Button>
-						</div>
-						<!-- Summary -->
-						<p
-							v-if="inlineTextContent"
-							class="mt-3 text-xs leading-relaxed text-muted-foreground line-clamp-4"
-						>
-							{{ inlineTextContent }}
-						</p>
-					</div>
-					<Button
-						variant="ghost"
-						size="icon"
-						class="h-8 w-8 shrink-0"
-						@click="emit('close')"
-					>
-						<X class="h-4 w-4" />
-					</Button>
-				</div>
+	<div v-if="citation" class="h-full flex flex-col">
+		<!-- Sticky document header -->
+		<div class="shrink-0 sticky top-0 z-10 bg-background doc-header-shadow">
+			<!-- Top bar: meta pills + action icons -->
+			<div class="flex items-center gap-2 pl-5 pr-2 pt-6 pb-0">
+				<Badge
+					:variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
+					class="text-[10px] h-5 px-1.5"
+				>
+					{{ citation.source === "HUDOC" ? "ECHR" : "Rechtspraak" }}
+				</Badge>
+				<span
+					v-if="importanceLabel"
+					class="inline-flex items-center gap-0.5 text-[11px] text-amber-600 dark:text-amber-400"
+				>
+					<Star class="h-2.5 w-2.5 fill-current" />
+					{{ importanceLabel }}
+				</span>
+				<span
+					v-if="citation.document_type"
+					class="text-[10px] uppercase tracking-wider text-muted-foreground/50"
+				>
+					{{ citation.document_type }}
+				</span>
 
-				<!-- Actions row -->
-				<div class="flex flex-wrap gap-2 mt-4">
-					<Button
-						variant="outline"
-						size="sm"
-						class="h-7 gap-1.5 text-xs"
-						@click="openOriginalDocument"
-					>
-						<ExternalLink class="h-3 w-3" />
-						View Original
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						class="h-7 gap-1.5 text-xs"
-						@click="emit('findSimilar', citation!)"
-					>
-						<Search class="h-3 w-3" />
-						Find Similar
-					</Button>
-				</div>
+				<!-- Spacer -->
+				<div class="flex-1" />
+
+				<!-- Compact action icons -->
+				<button
+					v-if="citation.url_publication"
+					class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
+					@click="openOriginalDocument"
+					title="View original source"
+					aria-label="View original source"
+				>
+					<Globe class="h-3.5 w-3.5" />
+				</button>
+				<button
+					class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
+					@click="openDocumentPage"
+					title="Open in new page"
+					aria-label="Open in new page"
+				>
+					<ExternalLink class="h-3.5 w-3.5" />
+				</button>
+				<div class="w-px h-4 bg-border/60 mx-0.5" />
+				<button
+					class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:text-foreground hover:bg-muted/50"
+					@click="emit('close')"
+					title="Close"
+					aria-label="Close"
+				>
+					<X class="h-3.5 w-3.5" />
+				</button>
 			</div>
 
+			<!-- Title + ECLI -->
+			<div class="pl-5 pr-3 pt-2.5 pb-3.5">
+				<h2 class="text-[15px] font-semibold leading-snug text-foreground line-clamp-2">
+					{{ citation.title || citation.ecli }}
+				</h2>
+				<div class="flex items-center gap-1.5 mt-1.5">
+					<code class="text-[10px] text-muted-foreground/60 font-mono leading-none">{{
+						citation.ecli
+					}}</code>
+					<button
+						class="shrink-0 text-muted-foreground/30 transition-colors hover:text-foreground"
+						@click="copyEcli"
+						title="Copy ECLI"
+						aria-label="Copy ECLI"
+					>
+						<Check v-if="copied" class="h-2.5 w-2.5 text-emerald-500" />
+						<Copy v-else class="h-2.5 w-2.5" />
+					</button>
+				</div>
+			</div>
 			<div class="h-px bg-border" />
+		</div>
 
-			<!-- Metadata -->
-			<div class="pl-6 pr-6 py-4">
+		<!-- Scrollable content -->
+		<div class="flex-1 min-h-0 overflow-y-auto">
+			<div class="space-y-0">
+				<!-- Summary -->
+				<div v-if="inlineTextContent" class="px-5 py-4">
+					<p class="text-xs leading-relaxed text-muted-foreground line-clamp-5">
+						{{ inlineTextContent }}
+					</p>
+				</div>
+
+				<div v-if="inlineTextContent" class="h-px bg-border" />
+
+				<!-- Metadata -->
+				<div class="px-5 py-4">
 				<div
 					class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-3"
 				>
@@ -732,7 +748,7 @@ const metadataItems = computed(() => {
 			<div class="h-px bg-border" />
 
 			<!-- Full text (expandable, fetched from API) -->
-			<div class="pl-6 pr-6 py-0">
+			<div class="px-5 py-0">
 				<button
 					class="flex w-full items-center justify-between py-4 text-left"
 					@click="toggleFullText"
@@ -848,7 +864,7 @@ const metadataItems = computed(() => {
 			<div class="h-px bg-border" />
 
 			<!-- Cited Documents section (outgoing: documents this case cites) -->
-			<div v-if="hasCitesSection" class="pl-6 pr-6 py-0">
+			<div v-if="hasCitesSection" class="px-5 py-0">
 				<button
 					class="flex w-full items-center justify-between py-4 text-left"
 					@click="toggleCites"
@@ -945,7 +961,7 @@ const metadataItems = computed(() => {
 			<div v-if="hasCitesSection" class="h-px bg-border" />
 
 			<!-- Cited By section (incoming: documents that cite this case) -->
-			<div v-if="hasCitedBySection" class="pl-6 pr-6 py-0">
+			<div v-if="hasCitedBySection" class="px-5 py-0">
 				<button
 					class="flex w-full items-center justify-between py-4 text-left"
 					@click="toggleCitedBy"
@@ -1043,6 +1059,13 @@ const metadataItems = computed(() => {
 
 			<!-- Bottom padding -->
 			<div class="h-16" />
+			</div>
 		</div>
 	</div>
 </template>
+
+<style scoped>
+.doc-header-shadow {
+	box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+}
+</style>
