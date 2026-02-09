@@ -21,7 +21,7 @@ import AppFooter from "~/components/shared/AppFooter.vue";
 import QueryBuilder from "~/components/search/QueryBuilder.vue";
 import ResultList from "~/components/results/ResultList.vue";
 import ResultFilters from "~/components/results/ResultFilters.vue";
-import ResultDetail from "~/components/results/ResultDetail.vue";
+import ResultDocument from "~/components/results/ResultDocument.vue";
 import ResultStats from "~/components/results/ResultStats.vue";
 import ResultSort from "~/components/results/ResultSort.vue";
 import BulkActions from "~/components/results/BulkActions.vue";
@@ -1461,7 +1461,10 @@ function handleFindSimilar(citation: Citation) {
 
 					<!-- Center: Results -->
 					<section
-						class="flex min-h-0 flex-1 flex-col pt-6 pr-6 pb-0 pl-6 min-w-0"
+						:class="[
+							'flex min-h-0 flex-1 flex-col pt-6 pb-0 pl-6 min-w-0',
+							store.detailOpen.value ? 'pr-4' : 'pr-6'
+						]"
 					>
 						<!-- Loading (initial search only, not pagination) -->
 						<div
@@ -1589,8 +1592,8 @@ function handleFindSimilar(citation: Citation) {
 								/>
 							</div>
 
-							<!-- Results list -->
-							<div class="min-h-0 flex-1 overflow-y-auto pr-0 pb-16">
+						<!-- Results list -->
+						<div class="min-h-0 flex-1 overflow-y-auto pb-16">
 								<ResultList
 									:results="store.results.value.results"
 									:query="store.query.value.text"
@@ -1610,7 +1613,7 @@ function handleFindSimilar(citation: Citation) {
 									@page="handlePageChange"
 									@page-size-change="handlePageSizeChange"
 								/>
-							</div>
+						</div>
 						</div>
 
 						<!-- Empty state -->
@@ -1620,6 +1623,19 @@ function handleFindSimilar(citation: Citation) {
 							</p>
 						</div>
 					</section>
+
+					<!-- Inline document view (full height) -->
+					<template v-if="store.detailOpen.value">
+						<div class="w-px self-stretch bg-border shrink-0" />
+						<aside class="w-[45%] shrink-0 min-h-0 overflow-hidden">
+							<ResultDocument
+								:citation="store.selectedResult.value"
+								@close="store.closeDetail()"
+								@find-similar="handleFindSimilar"
+								@select-citation="handleSelectResult"
+							/>
+						</aside>
+					</template>
 				</div>
 			</div>
 		</main>
@@ -1657,13 +1673,6 @@ function handleFindSimilar(citation: Citation) {
 			</Transition>
 		</Teleport>
 
-		<!-- Detail panel -->
-		<ResultDetail
-			:citation="store.selectedResult.value"
-			:open="store.detailOpen.value"
-			@close="store.closeDetail()"
-			@find-similar="handleFindSimilar"
-		/>
 	</div>
 </template>
 

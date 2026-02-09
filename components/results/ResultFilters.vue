@@ -39,6 +39,12 @@ function toggleSection(section: string) {
 
 const activeFilters = computed(() => {
   const chips: { label: string; onremove: () => void }[] = []
+  if ((props.query.sources?.length ?? 0) === 1) {
+    for (const src of props.query.sources) {
+      const label = src === 'ECHR' ? 'ECHR' : src === 'RS' ? 'Rechtspraak' : src
+      chips.push({ label: `Source: ${label}`, onremove: () => emit('change', { sources: props.query.sources.filter((s) => s !== src) }) })
+    }
+  }
   for (const state of props.query.respondentState) {
     chips.push({ label: state, onremove: () => emit('change', { respondentState: props.query.respondentState.filter((s) => s !== state) }) })
   }
@@ -89,7 +95,7 @@ type FacetSection = {
 
 const sections = computed<FacetSection[]>(() =>
   ([
-    { key: 'sources', label: 'Source', items: props.facets.sources, field: 'sources' as keyof SearchQuery, activeValues: [] },
+    { key: 'sources', label: 'Source', items: props.facets.sources, field: 'sources' as keyof SearchQuery, activeValues: (props.query.sources?.length ?? 0) >= 2 ? [] : (props.query.sources || []) },
     { key: 'articles', label: 'Articles Violated', items: props.facets.articles.slice(0, 15), field: 'articleViolated' as keyof SearchQuery, activeValues: props.query.articleViolated },
     { key: 'respondentStates', label: 'Respondent State', items: props.facets.respondentStates.slice(0, 15), field: 'respondentState' as keyof SearchQuery, activeValues: props.query.respondentState },
     { key: 'documentTypes', label: 'Document Type', items: props.facets.documentTypes, field: 'documentType' as keyof SearchQuery, activeValues: props.query.documentType },
@@ -164,7 +170,7 @@ function isActive(section: FacetSection, itemValue: string): boolean {
             @click="() => {
               if (section.key === 'importance') {
                 toggleImportanceFacet(Number(item.value))
-              } else if (section.key !== 'sources' && section.key !== 'years') {
+              } else if (section.key !== 'years') {
                 toggleFacetValue(section.field, item.value)
               }
             }"

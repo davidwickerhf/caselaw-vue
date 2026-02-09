@@ -411,4 +411,98 @@ export async function fetchExpandNode(
     return await response.json();
 }
 
+/**
+ * Language entry returned by the ECHR full-text endpoint when no language is specified.
+ */
+export type EchrLanguageEntry = {
+    itemid: string;
+    full_text: string | null;
+    full_text_available: boolean;
+    message?: string;
+};
+
+/**
+ * Result of fetching full text for a single document.
+ *
+ * For ECHR (no language param): returns a `languages` map so the UI can
+ * switch languages client-side without re-fetching.
+ * For Rechtspraak (or ECHR with a specific language): returns a single `fullText`.
+ */
+export type FullTextResult = {
+    fullText: string | null;
+    /** Active language code (e.g. "ENG") */
+    language?: string;
+    /** All available languages keyed by ISO code (ECHR only, when fetched without language param) */
+    languages?: Record<string, EchrLanguageEntry>;
+    /** Default/preferred language returned by the backend */
+    defaultLanguage?: string;
+    error?: string;
+};
+
+/**
+ * Fetch the full text for a document (POST-only endpoints).
+ *
+ * ECHR:        POST /api/echr/text    { ecli }  → languages map (all languages)
+ * Rechtspraak: POST /api/network/text { ecli }  → { ecli, full_text }
+ *
+ * For ECHR we omit the language param so the backend returns all available
+ * languages in one response. The component can then switch locally.
+ * Returns 404 when the ECLI is not found.
+ */
+export async function fetchDocumentFullText(
+    ecli: string,
+    source: 'HUDOC' | 'Rechtspraak',
+    options?: { signal?: AbortSignal }
+): Promise<FullTextResult> {
+    const signal = options?.signal;
+    const endpoint = source === 'HUDOC'
+        ? `${API_BASE}/api/echr/text`
+        : `${API_BASE}/api/network/text`;
+
+    try {
+        const body: Record<string, unknown> = { ecli };
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal,
+        });
+
+        if (!response.ok) {
+            if (response.status === 404) return { fullText: null };
+            const errorText = await response.text().catch(() => '');
+            return { fullText: null, error: `Full-text API error (${response.status}): ${errorText}`.trim() };
+        }
+
+        const data = await response.json();
+        const record = Array.isArray(data) ? data[0] : data;
+        if (!record) return { fullText: null };
+
+        // ECHR without language → { ecli, default_language, languages: { ENG: {...}, FRE: {...} } }
+        if (record.languages && typeof record.languages === 'object') {
+            const defaultLang: string = record.default_language || 'ENG';
+            const languages = record.languages as Record<string, EchrLanguageEntry>;
+
+            // Pick the default language's text
+            const defaultEntry = languages[defaultLang];
+            const fullText = defaultEntry?.full_text_available && typeof defaultEntry.full_text === 'string'
+                ? defaultEntry.full_text
+                : null;
+
+            return { fullText, language: defaultLang, defaultLanguage: defaultLang, languages };
+        }
+
+        // Rechtspraak or single-language response → { ecli, full_text }
+        const fullText = typeof record.full_text === 'string' && record.full_text.trim()
+            ? record.full_text
+            : null;
+
+        return { fullText, language: record.language };
+    } catch (err) {
+        if ((err as Error).name === 'AbortError') throw err;
+        return { fullText: null, error: err instanceof Error ? err.message : 'Failed to fetch full text' };
+    }
+}
+
 export { DEFAULT_PAGE_SIZE };

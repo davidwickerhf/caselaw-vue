@@ -1,0 +1,930 @@
+<script setup lang="ts">
+import { ref, computed, watch } from "vue";
+import {
+	ExternalLink,
+	BookOpen,
+	Star,
+	Calendar,
+	MapPin,
+	FileText,
+	Tag,
+	Scale,
+	Search,
+	Copy,
+	Check,
+	X,
+	ChevronDown,
+	ChevronUp,
+	Loader2,
+	Globe,
+	Hash,
+	Gavel,
+	Link2,
+} from "lucide-vue-next";
+import Badge from "~/components/ui/badge/Badge.vue";
+import Button from "~/components/ui/button/Button.vue";
+import type { Citation } from "~/lib/types";
+import { formatDate } from "~/lib/utils/utils";
+import { fetchExpandNode, fetchDocumentFullText, type EchrLanguageEntry } from "~/lib/api/client";
+
+const props = defineProps<{
+	citation: Citation | null;
+}>();
+
+const emit = defineEmits<{
+	close: [];
+	findSimilar: [citation: Citation];
+	selectCitation: [citation: Citation];
+}>();
+
+const copied = ref(false);
+const fullTextExpanded = ref(false);
+const citedDocsExpanded = ref(false);
+const citedDocs = ref<Citation[]>([]);
+const citedLoading = ref(false);
+const citedError = ref<string | null>(null);
+const citedLoaded = ref(false);
+
+// Full text fetching state
+const fetchedFullText = ref<string | null>(null);
+const fullTextLoading = ref(false);
+const fullTextError = ref<string | null>(null);
+const fullTextLoaded = ref(false);
+const fullTextLanguage = ref<string | null>(null);
+const selectedLanguage = ref<string | null>(null);
+// All languages map from the ECHR endpoint (allows client-side switching)
+const languagesMap = ref<Record<string, EchrLanguageEntry> | null>(null);
+let fullTextAbort: AbortController | null = null;
+
+// Available languages: only those that actually have full text
+const availableLanguages = computed(() => {
+	if (languagesMap.value) {
+		return Object.keys(languagesMap.value).filter(
+			(lang) => languagesMap.value![lang].full_text_available,
+		);
+	}
+	return [];
+});
+
+const isEchr = computed(() => props.citation?.source === "HUDOC");
+
+const LANGUAGE_LABELS: Record<string, string> = {
+	ENG: "English",
+	FRE: "French",
+	GER: "German",
+	ITA: "Italian",
+	SPA: "Spanish",
+	RUS: "Russian",
+	TUR: "Turkish",
+	UKR: "Ukrainian",
+	ROM: "Romanian",
+	ARM: "Armenian",
+	AZE: "Azerbaijani",
+	BOS: "Bosnian",
+	BUL: "Bulgarian",
+	CAT: "Catalan",
+	CZE: "Czech",
+	DUT: "Dutch",
+	EST: "Estonian",
+	FIN: "Finnish",
+	GEO: "Georgian",
+	GRE: "Greek",
+	HUN: "Hungarian",
+	LAV: "Latvian",
+	LIT: "Lithuanian",
+	MAC: "Macedonian",
+	MLT: "Maltese",
+	MOL: "Moldovan",
+	MON: "Montenegrin",
+	NOR: "Norwegian",
+	POL: "Polish",
+	POR: "Portuguese",
+	SCR: "Serbian",
+	SLO: "Slovak",
+	SLV: "Slovenian",
+	SWE: "Swedish",
+	ALB: "Albanian",
+};
+
+function getLanguageLabel(code: string) {
+	return LANGUAGE_LABELS[code] || code;
+}
+
+function copyEcli() {
+	if (!props.citation) return;
+	navigator.clipboard.writeText(props.citation.ecli);
+	copied.value = true;
+	setTimeout(() => (copied.value = false), 2000);
+}
+
+function openOriginalDocument() {
+	if (!props.citation?.url_publication) return;
+	if (typeof window === "undefined") return;
+	window.open(props.citation.url_publication, "_blank");
+}
+
+const date = computed(
+	() => props.citation?.date || props.citation?.date_judgment || "",
+);
+const importanceLabel = computed(() =>
+	props.citation?.importance === 1
+		? "Key case"
+		: props.citation?.importance === 2
+			? "Important"
+			: props.citation?.importance === 3
+				? "Moderate"
+				: props.citation?.importance === 4
+					? "Low importance"
+					: "",
+);
+
+/**
+ * Fix missing spaces after punctuation (stripped in the database).
+ * Adds a space after `.`, `;`, `,`, `:`, `!`, `?`, `)` when directly
+ * followed by a letter or digit, without breaking abbreviations like "Art.6".
+ */
+function fixPunctuation(text: string): string {
+	return text
+		.replace(/([.])([A-Za-z])/g, "$1 $2") // period + letter
+		.replace(/([;:!?])([A-Za-z0-9(])/g, "$1 $2") // ; : ! ? + alphanum or (
+		.replace(/([,])([A-Za-z(])/g, "$1 $2") // comma + letter or (
+		.replace(/(\))([A-Za-z0-9(])/g, "$1 $2"); // ) + alphanum or (
+}
+
+/**
+ * Strip the title from the beginning of the text if it's repeated there.
+ */
+function stripLeadingTitle(text: string, title: string | undefined): string {
+	if (!title) return text;
+	const trimmedTitle = title.trim();
+	if (!trimmedTitle) return text;
+	const trimmedText = text.trimStart();
+	if (trimmedText.startsWith(trimmedTitle)) {
+		return trimmedText.slice(trimmedTitle.length).replace(/^[\s\n\-–—:]+/, "").trimStart();
+	}
+	return text;
+}
+
+// Inline text from search results (headnote/conclusion/summary)
+const inlineTextContent = computed(() => {
+	if (!props.citation) return "";
+	const parts: string[] = [];
+	if (props.citation.headnote) parts.push(props.citation.headnote);
+	if (
+		props.citation.conclusion &&
+		props.citation.conclusion !== props.citation.headnote
+	) {
+		parts.push(props.citation.conclusion);
+	}
+	if (props.citation.summary && !parts.includes(props.citation.summary)) {
+		parts.push(props.citation.summary);
+	}
+	let text = parts.join("\n\n");
+	text = stripLeadingTitle(text, props.citation.title);
+	text = fixPunctuation(text);
+	return text.trim();
+});
+
+// Full text: only from the API, no fallback to summary
+const fullTextContent = computed(() => fetchedFullText.value || "");
+
+async function loadFullText() {
+	if (!props.citation) return;
+	fullTextLoading.value = true;
+	fullTextError.value = null;
+
+	// Abort any previous fetch
+	if (fullTextAbort) fullTextAbort.abort();
+	fullTextAbort = new AbortController();
+
+	try {
+		const result = await fetchDocumentFullText(
+			props.citation.ecli,
+			props.citation.source as "HUDOC" | "Rechtspraak",
+			{ signal: fullTextAbort.signal },
+		);
+		if (result.error) {
+			fullTextError.value = result.error;
+		}
+
+		// Store the languages map for client-side switching (ECHR)
+		if (result.languages) {
+			languagesMap.value = result.languages;
+		}
+
+		// Set the active language and text
+		const lang = result.defaultLanguage || result.language || null;
+		fullTextLanguage.value = lang;
+		selectedLanguage.value = lang;
+		fetchedFullText.value = result.fullText;
+
+		fullTextLoaded.value = true;
+	} catch (err) {
+		if ((err as Error).name === "AbortError") return;
+		fullTextError.value =
+			err instanceof Error ? err.message : "Failed to fetch full text";
+	} finally {
+		fullTextLoading.value = false;
+	}
+}
+
+function switchLanguage(lang: string) {
+	if (lang === selectedLanguage.value) return;
+	selectedLanguage.value = lang;
+	fullTextLanguage.value = lang;
+
+	// Read from the cached languages map (no re-fetch needed)
+	if (languagesMap.value && languagesMap.value[lang]) {
+		const entry = languagesMap.value[lang];
+		fetchedFullText.value = entry.full_text_available && typeof entry.full_text === "string"
+			? entry.full_text
+			: null;
+	} else {
+		fetchedFullText.value = null;
+	}
+}
+
+function toggleFullText() {
+	fullTextExpanded.value = !fullTextExpanded.value;
+}
+
+const hasCitedDocs = computed(() => {
+	if (!props.citation) return false;
+	return (
+		(props.citation.cites?.length ?? 0) > 0 ||
+		(props.citation.cited_by?.length ?? 0) > 0 ||
+		(props.citation.nCited ?? 0) > 0 ||
+		(props.citation.nCiting ?? 0) > 0
+	);
+});
+
+const citedByCount = computed(
+	() => props.citation?.cited_by?.length ?? props.citation?.nCited ?? 0,
+);
+const citesCount = computed(
+	() => props.citation?.cites?.length ?? props.citation?.nCiting ?? 0,
+);
+
+async function loadCitedDocuments() {
+	if (!props.citation || citedLoaded.value) return;
+	citedLoading.value = true;
+	citedError.value = null;
+	try {
+		const dataset = props.citation.source === "HUDOC" ? "ECHR" : "RS";
+		const result = await fetchExpandNode(props.citation.ecli, {
+			degreesSource: 1,
+			degreesTarget: 1,
+			nodeDataset: dataset,
+		});
+		// Transform expanded nodes to Citations (they come as ApiNode)
+		citedDocs.value = result.expandedNodes.map((node) => {
+			const d = node.data as Record<string, unknown>;
+			const ecli = (d.ecli as string) || node.id;
+			const ds = (d.dataset as string) || "";
+			const isEchr = ds === "ECHR" || ds === "echr";
+			return {
+				id: ecli,
+				ecli,
+				year: 0,
+				summary: (d.summary as string) || (d.headnote as string) || "",
+				instance: (d.instance as string) || "",
+				domain: "",
+				domains: [],
+				nCited: 0,
+				nCiting: 0,
+				topics: "",
+				document_type: (d.document_type as string) || "",
+				procedure_type: "",
+				url_publication: (d.url_publication as string) || "",
+				source: isEchr ? "HUDOC" : "Rechtspraak",
+				title: (d.title as string) || (d.headnote as string) || undefined,
+				respondent_state: d.respondent_state as string | undefined,
+				date:
+					(d.date_judgment as string) ||
+					(d.date_decision as string) ||
+					undefined,
+			} as Citation;
+		});
+		citedLoaded.value = true;
+	} catch (err) {
+		citedError.value =
+			err instanceof Error ? err.message : "Failed to load citations";
+	} finally {
+		citedLoading.value = false;
+	}
+}
+
+function toggleCitedDocs() {
+	citedDocsExpanded.value = !citedDocsExpanded.value;
+	if (citedDocsExpanded.value && !citedLoaded.value) {
+		loadCitedDocuments();
+	}
+}
+
+// Reset state when citation changes and immediately fetch full text in background
+watch(
+	() => props.citation?.ecli,
+	(newEcli, oldEcli) => {
+		// Skip reset on initial mount (no old value to clean up)
+		if (oldEcli) {
+			fullTextExpanded.value = false;
+			citedDocsExpanded.value = false;
+			citedDocs.value = [];
+			citedLoading.value = false;
+			citedError.value = null;
+			citedLoaded.value = false;
+		// Reset full text state
+		if (fullTextAbort) fullTextAbort.abort();
+		fetchedFullText.value = null;
+		fullTextLoading.value = false;
+		fullTextError.value = null;
+		fullTextLoaded.value = false;
+		fullTextLanguage.value = null;
+		selectedLanguage.value = null;
+		languagesMap.value = null;
+		}
+		// Fetch full text in the background as soon as the document opens
+		if (newEcli && props.citation) {
+			loadFullText();
+		}
+	},
+	{ immediate: true },
+);
+
+// Metadata items as computed for clean rendering
+const metadataItems = computed(() => {
+	if (!props.citation) return [];
+	const c = props.citation;
+	const items: Array<{ label: string; value: string; icon: typeof Calendar }> =
+		[];
+
+	if (date.value)
+		items.push({
+			label: "Date",
+			value: formatDate(date.value),
+			icon: Calendar,
+		});
+	if (c.respondent_state)
+		items.push({
+			label: "Respondent State",
+			value: c.respondent_state,
+			icon: MapPin,
+		});
+	if (c.document_type)
+		items.push({
+			label: "Document Type",
+			value: c.document_type,
+			icon: FileText,
+		});
+	if (c.instance)
+		items.push({ label: "Court Instance", value: c.instance, icon: Scale });
+	if (c.domain) items.push({ label: "Domain", value: c.domain, icon: Tag });
+	if (c.language)
+		items.push({ label: "Language", value: c.language, icon: Globe });
+	if (c.application_number)
+		items.push({
+			label: "Application No.",
+			value: c.application_number,
+			icon: Hash,
+		});
+	if (c.procedure_type)
+		items.push({
+			label: "Procedure Type",
+			value: c.procedure_type,
+			icon: Gavel,
+		});
+
+	return items;
+});
+</script>
+
+<template>
+	<div v-if="citation" class="h-full overflow-y-auto">
+		<div class="space-y-0">
+			<!-- Document header -->
+			<div class="pl-6 pr-6 pt-5 pb-4">
+				<div class="flex items-start justify-between gap-3">
+					<div class="min-w-0 flex-1">
+						<div class="flex flex-wrap items-center gap-2 mb-2">
+							<Badge
+								:variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
+								class="text-xs"
+							>
+								{{ citation.source === "HUDOC" ? "ECHR" : "Rechtspraak" }}
+							</Badge>
+							<span
+								v-if="importanceLabel"
+								class="inline-flex items-center gap-0.5 text-xs text-amber-600 dark:text-amber-400"
+							>
+								<Star class="h-3 w-3 fill-current" />
+								{{ importanceLabel }}
+							</span>
+						</div>
+						<h2 class="text-lg font-semibold leading-tight text-foreground">
+							{{ citation.title || citation.ecli }}
+						</h2>
+						<div class="flex items-center gap-1.5 mt-2">
+							<code class="text-xs text-muted-foreground font-mono">{{
+								citation.ecli
+							}}</code>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-5 w-5"
+								@click="copyEcli"
+							>
+								<Check v-if="copied" class="h-3 w-3 text-emerald-500" />
+								<Copy v-else class="h-3 w-3" />
+							</Button>
+						</div>
+						<!-- Summary -->
+						<p
+							v-if="inlineTextContent"
+							class="mt-3 text-xs leading-relaxed text-muted-foreground line-clamp-4"
+						>
+							{{ inlineTextContent }}
+						</p>
+					</div>
+					<Button
+						variant="ghost"
+						size="icon"
+						class="h-8 w-8 shrink-0"
+						@click="emit('close')"
+					>
+						<X class="h-4 w-4" />
+					</Button>
+				</div>
+
+				<!-- Actions row -->
+				<div class="flex flex-wrap gap-2 mt-4">
+					<Button
+						variant="outline"
+						size="sm"
+						class="h-7 gap-1.5 text-xs"
+						@click="openOriginalDocument"
+					>
+						<ExternalLink class="h-3 w-3" />
+						View Original
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						class="h-7 gap-1.5 text-xs"
+						@click="emit('findSimilar', citation!)"
+					>
+						<Search class="h-3 w-3" />
+						Find Similar
+					</Button>
+				</div>
+			</div>
+
+			<div class="h-px bg-border" />
+
+			<!-- Metadata -->
+			<div class="pl-6 pr-6 py-4">
+				<div
+					class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-3"
+				>
+					Metadata
+				</div>
+				<div class="grid grid-cols-2 gap-x-6 gap-y-3">
+					<div
+						v-for="item in metadataItems"
+						:key="item.label"
+						class="flex items-start gap-2.5 text-sm"
+					>
+						<component
+							:is="item.icon"
+							class="h-3.5 w-3.5 text-muted-foreground/60 shrink-0 mt-0.5"
+						/>
+						<div class="min-w-0">
+							<div
+								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider"
+							>
+								{{ item.label }}
+							</div>
+							<div class="text-sm font-medium text-foreground/90 truncate">
+								{{ item.value }}
+							</div>
+						</div>
+					</div>
+
+					<!-- Citations count -->
+					<div class="flex items-start gap-2.5 text-sm">
+						<Link2
+							class="h-3.5 w-3.5 text-muted-foreground/60 shrink-0 mt-0.5"
+						/>
+						<div class="min-w-0">
+							<div
+								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider"
+							>
+								Citations
+							</div>
+							<div class="text-sm font-medium text-foreground/90">
+								{{ citation.nCited }} cited &middot;
+								{{ citation.nCiting }} citing
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Articles -->
+				<div
+					v-if="
+						(citation.article_violated?.length ?? 0) +
+							(citation.article_applied?.length ?? 0) +
+							(citation.article_non_violated?.length ?? 0) >
+						0
+					"
+					class="mt-4 space-y-3"
+				>
+					<div
+						v-if="
+							citation.article_violated && citation.article_violated.length > 0
+						"
+					>
+						<div
+							class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-1.5"
+						>
+							Articles Violated
+						</div>
+						<div class="flex flex-wrap gap-1">
+							<Badge
+								v-for="article in citation.article_violated"
+								:key="article"
+								variant="outline"
+								class="text-xs bg-red-50/70 text-red-700 border-red-200/70 dark:bg-red-950/35 dark:text-red-200 dark:border-red-800/60"
+							>
+								Art. {{ article }}
+							</Badge>
+						</div>
+					</div>
+					<div
+						v-if="
+							citation.article_applied && citation.article_applied.length > 0
+						"
+					>
+						<div
+							class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-1.5"
+						>
+							Articles Applied
+						</div>
+						<div class="flex flex-wrap gap-1">
+							<Badge
+								v-for="article in citation.article_applied"
+								:key="article"
+								variant="outline"
+								class="text-xs bg-blue-50/70 text-blue-700 border-blue-200/70 dark:bg-blue-950/35 dark:text-blue-200 dark:border-blue-800/60"
+							>
+								Art. {{ article }}
+							</Badge>
+						</div>
+					</div>
+					<div
+						v-if="
+							citation.article_non_violated &&
+							citation.article_non_violated.length > 0
+						"
+					>
+						<div
+							class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-1.5"
+						>
+							Articles Non-Violated
+						</div>
+						<div class="flex flex-wrap gap-1">
+							<Badge
+								v-for="article in citation.article_non_violated"
+								:key="article"
+								variant="outline"
+								class="text-xs bg-emerald-50/70 text-emerald-700 border-emerald-200/70 dark:bg-emerald-950/35 dark:text-emerald-200 dark:border-emerald-800/60"
+							>
+								Art. {{ article }}
+							</Badge>
+						</div>
+					</div>
+				</div>
+
+				<!-- Keywords -->
+				<div
+					v-if="citation.keywords && citation.keywords.length > 0"
+					class="mt-4"
+				>
+					<div
+						class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-1.5"
+					>
+						Keywords
+					</div>
+					<div class="flex flex-wrap gap-1">
+						<Badge
+							v-for="keyword in citation.keywords"
+							:key="keyword"
+							variant="secondary"
+							class="text-xs"
+							>{{ keyword }}</Badge
+						>
+					</div>
+				</div>
+
+				<!-- Legal Provisions (RS) -->
+				<div
+					v-if="
+						citation.legal_provisions && citation.legal_provisions.length > 0
+					"
+					class="mt-4"
+				>
+					<div
+						class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-1.5"
+					>
+						Legal Provisions
+					</div>
+					<div class="flex flex-wrap gap-1">
+						<Badge
+							v-for="prov in citation.legal_provisions"
+							:key="prov"
+							variant="outline"
+							class="text-xs"
+							>{{ prov }}</Badge
+						>
+					</div>
+				</div>
+			</div>
+
+			<div class="h-px bg-border" />
+
+			<!-- Full text (expandable, fetched from API) -->
+			<div class="pl-6 pr-6 py-0">
+				<button
+					class="flex w-full items-center justify-between py-4 text-left"
+					@click="toggleFullText"
+				>
+					<div class="flex items-center gap-2">
+						<div
+							class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
+						>
+							Document Text
+						</div>
+						<Loader2
+							v-if="fullTextLoading"
+							class="h-3 w-3 animate-spin text-muted-foreground/60"
+						/>
+						<Badge
+							v-if="fullTextLanguage && fullTextExpanded"
+							variant="outline"
+							class="text-[10px] h-4 px-1.5"
+						>
+							{{ fullTextLanguage }}
+						</Badge>
+					</div>
+					<ChevronDown
+						v-if="!fullTextExpanded"
+						class="h-4 w-4 text-muted-foreground/60"
+					/>
+					<ChevronUp v-else class="h-4 w-4 text-muted-foreground/60" />
+				</button>
+
+				<!-- Language selector (ECHR only, when expanded and multiple languages available) -->
+				<div
+					v-if="fullTextExpanded && availableLanguages.length > 1"
+					class="flex flex-wrap gap-1.5 pb-3"
+				>
+					<button
+						v-for="lang in availableLanguages"
+						:key="lang"
+						:class="[
+							'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors',
+							selectedLanguage === lang
+								? 'border-primary/40 bg-primary/10 text-primary'
+								: 'border-border/50 text-muted-foreground hover:text-foreground hover:border-border',
+						]"
+						@click.stop="switchLanguage(lang)"
+					>
+						{{ getLanguageLabel(lang) }}
+					</button>
+				</div>
+				<div v-if="fullTextExpanded" class="pb-4 space-y-3">
+					<!-- Loading -->
+					<div
+						v-if="fullTextLoading && !fullTextContent"
+						class="flex items-center justify-center py-6"
+					>
+						<Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
+						<span class="ml-2 text-xs text-muted-foreground"
+							>Loading full text...</span
+						>
+					</div>
+
+					<!-- Error -->
+					<div
+						v-else-if="fullTextError && !fullTextContent"
+						class="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
+					>
+						{{ fullTextError }}
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 ml-2 text-xs"
+							@click="fullTextLoaded = false; loadFullText()"
+							>Retry</Button
+						>
+					</div>
+
+					<!-- Content -->
+					<div v-else-if="fullTextContent">
+						<p
+							class="text-sm text-foreground/80 leading-relaxed whitespace-pre-line"
+						>
+							{{ fullTextContent }}
+						</p>
+					</div>
+
+					<!-- No text available -->
+					<div
+						v-else
+						class="rounded-lg border border-border/50 bg-muted/30 px-4 py-3"
+					>
+						<p class="text-xs text-muted-foreground">
+							Full text is not available for this document.
+						</p>
+						<p v-if="citation.url_publication" class="text-xs text-muted-foreground mt-1">
+							You can read the original on
+							<a
+								:href="citation.url_publication"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-primary hover:underline"
+							>the source website</a>.
+						</p>
+					</div>
+				</div>
+			</div>
+
+			<div class="h-px bg-border" />
+
+			<!-- Cited documents (expandable with API call) -->
+			<div v-if="hasCitedDocs" class="pl-6 pr-6 py-0">
+				<button
+					class="flex w-full items-center justify-between py-4 text-left"
+					@click="toggleCitedDocs"
+				>
+					<div class="flex items-center gap-2">
+						<div
+							class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
+						>
+							Cited Documents
+						</div>
+						<Badge variant="secondary" class="text-[10px] h-4 px-1.5">
+							{{ citesCount + citedByCount }}
+						</Badge>
+					</div>
+					<ChevronDown
+						v-if="!citedDocsExpanded"
+						class="h-4 w-4 text-muted-foreground/60"
+					/>
+					<ChevronUp v-else class="h-4 w-4 text-muted-foreground/60" />
+				</button>
+
+				<div v-if="citedDocsExpanded" class="pb-4 space-y-3">
+					<!-- Loading -->
+					<div
+						v-if="citedLoading"
+						class="flex items-center justify-center py-6"
+					>
+						<Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
+						<span class="ml-2 text-xs text-muted-foreground"
+							>Loading citations...</span
+						>
+					</div>
+
+					<!-- Error -->
+					<div
+						v-else-if="citedError"
+						class="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
+					>
+						{{ citedError }}
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 ml-2 text-xs"
+							@click="loadCitedDocuments"
+							>Retry</Button
+						>
+					</div>
+
+					<!-- Cited docs list -->
+					<template v-else-if="citedDocs.length > 0">
+						<!-- Cites -->
+						<div v-if="citation.cites && citation.cites.length > 0">
+							<div
+								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-2"
+							>
+								Cites ({{ citation.cites.length }})
+							</div>
+							<div class="space-y-1.5">
+								<button
+									v-for="doc in citedDocs.filter((d) =>
+										citation!.cites?.includes(d.ecli),
+									)"
+									:key="doc.ecli"
+									class="group flex w-full items-start gap-3 rounded-lg border border-border/40 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-accent/50"
+									@click="emit('selectCitation', doc)"
+								>
+									<Badge
+										:variant="doc.source === 'HUDOC' ? 'default' : 'secondary'"
+										class="text-[10px] mt-0.5 shrink-0"
+									>
+										{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}
+									</Badge>
+									<div class="min-w-0 flex-1">
+										<div class="text-xs font-medium text-foreground truncate">
+											{{ doc.title || doc.ecli }}
+										</div>
+										<code
+											class="text-[10px] text-muted-foreground/70 font-mono"
+											>{{ doc.ecli }}</code
+										>
+									</div>
+								</button>
+							</div>
+						</div>
+
+						<!-- Cited by -->
+						<div v-if="citation.cited_by && citation.cited_by.length > 0">
+							<div
+								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-2"
+							>
+								Cited by ({{ citation.cited_by.length }})
+							</div>
+							<div class="space-y-1.5">
+								<button
+									v-for="doc in citedDocs.filter((d) =>
+										citation!.cited_by?.includes(d.ecli),
+									)"
+									:key="doc.ecli"
+									class="group flex w-full items-start gap-3 rounded-lg border border-border/40 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-accent/50"
+									@click="emit('selectCitation', doc)"
+								>
+									<Badge
+										:variant="doc.source === 'HUDOC' ? 'default' : 'secondary'"
+										class="text-[10px] mt-0.5 shrink-0"
+									>
+										{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}
+									</Badge>
+									<div class="min-w-0 flex-1">
+										<div class="text-xs font-medium text-foreground truncate">
+											{{ doc.title || doc.ecli }}
+										</div>
+										<code
+											class="text-[10px] text-muted-foreground/70 font-mono"
+											>{{ doc.ecli }}</code
+										>
+									</div>
+								</button>
+							</div>
+						</div>
+					</template>
+
+					<!-- No expanded data but we have ECLI lists -->
+					<template v-else-if="!citedLoading">
+						<div v-if="citation.cites && citation.cites.length > 0">
+							<div
+								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-2"
+							>
+								Cites ({{ citation.cites.length }})
+							</div>
+							<div class="space-y-1">
+								<div
+									v-for="ecli in citation.cites"
+									:key="ecli"
+									class="text-xs font-mono text-muted-foreground/80 truncate"
+								>
+									{{ ecli }}
+								</div>
+							</div>
+						</div>
+						<div v-if="citation.cited_by && citation.cited_by.length > 0">
+							<div
+								class="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-2"
+							>
+								Cited by ({{ citation.cited_by.length }})
+							</div>
+							<div class="space-y-1">
+								<div
+									v-for="ecli in citation.cited_by"
+									:key="ecli"
+									class="text-xs font-mono text-muted-foreground/80 truncate"
+								>
+									{{ ecli }}
+								</div>
+							</div>
+						</div>
+					</template>
+				</div>
+			</div>
+
+			<div v-if="hasCitedDocs" class="h-px bg-border" />
+
+			<!-- Bottom padding -->
+			<div class="h-16" />
+		</div>
+	</div>
+</template>
