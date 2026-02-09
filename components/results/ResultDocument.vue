@@ -18,9 +18,12 @@ import {
 	Hash,
 	Gavel,
 	Link2,
+	Link,
+	Bookmark,
 } from "lucide-vue-next";
 import Badge from "~/components/ui/badge/Badge.vue";
 import Button from "~/components/ui/button/Button.vue";
+import Tooltip from "~/components/ui/tooltip/Tooltip.vue";
 import type { Citation } from "~/lib/types";
 import { formatDate } from "~/lib/utils/utils";
 import {
@@ -28,6 +31,7 @@ import {
 	fetchDocumentFullText,
 	type EchrLanguageEntry,
 } from "~/lib/api/client";
+import { useUserData } from "~/composables/useUserData";
 
 const props = defineProps<{
 	citation: Citation | null;
@@ -39,7 +43,11 @@ const emit = defineEmits<{
 	selectCitation: [citation: Citation];
 }>();
 
+const userData = useUserData();
+const isSaved = computed(() => props.citation ? userData.isDocSaved(props.citation.ecli) : false);
+
 const copied = ref(false);
+const linkCopied = ref(false);
 const fullTextExpanded = ref(false);
 const citedDocs = ref<Citation[]>([]);
 const citedLoading = ref(false);
@@ -127,11 +135,28 @@ function openOriginalDocument() {
 	window.open(props.citation.url_publication, "_blank");
 }
 
+function getDocumentUrl(includeFrom = false) {
+	if (!props.citation) return "";
+	let url = `/document?ecli=${encodeURIComponent(props.citation.ecli)}`;
+	if (includeFrom && typeof window !== "undefined") {
+		// Pass current results URL so the document page can navigate back to it
+		url += `&from=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+	}
+	return url;
+}
+
 function openDocumentPage() {
 	if (!props.citation) return;
 	if (typeof window === "undefined") return;
-	const url = `/document/${encodeURIComponent(props.citation.ecli)}`;
-	window.open(url, "_blank");
+	window.open(getDocumentUrl(true), "_blank");
+}
+
+function copyDocumentLink() {
+	if (!props.citation || typeof window === "undefined") return;
+	const fullUrl = `${window.location.origin}${getDocumentUrl()}`;
+	navigator.clipboard.writeText(fullUrl);
+	linkCopied.value = true;
+	setTimeout(() => (linkCopied.value = false), 2000);
 }
 
 const date = computed(
@@ -431,6 +456,8 @@ watch(
 		// Fetch full text in the background as soon as the document opens
 		if (newEcli && props.citation) {
 			loadFullText();
+			// Track document view
+			userData.trackDocumentView(props.citation);
 		}
 	},
 	{ immediate: true },
@@ -513,23 +540,48 @@ const metadataItems = computed(() => {
 				<div class="flex-1" />
 
 				<!-- Compact action icons -->
-				<button
-					v-if="citation.url_publication"
-					class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
-					@click="openOriginalDocument"
-					title="View original source"
-					aria-label="View original source"
-				>
-					<Globe class="h-3.5 w-3.5" />
-				</button>
-				<button
-					class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
-					@click="openDocumentPage"
-					title="Open in new page"
-					aria-label="Open in new page"
-				>
-					<ExternalLink class="h-3.5 w-3.5" />
-				</button>
+				<Tooltip v-if="citation.url_publication" text="View original source">
+					<button
+						class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
+						@click="openOriginalDocument"
+						aria-label="View original source"
+					>
+						<Globe class="h-3.5 w-3.5" />
+					</button>
+				</Tooltip>
+				<Tooltip text="Copy document link">
+					<button
+						class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
+						@click="copyDocumentLink"
+						aria-label="Copy document link"
+					>
+						<Check v-if="linkCopied" class="h-3.5 w-3.5 text-emerald-500" />
+						<Link class="h-3.5 w-3.5" v-else />
+					</button>
+				</Tooltip>
+				<Tooltip text="Open in new page">
+					<button
+						class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
+						@click="openDocumentPage"
+						aria-label="Open in new page"
+					>
+						<ExternalLink class="h-3.5 w-3.5" />
+					</button>
+				</Tooltip>
+				<Tooltip :text="isSaved ? 'Unsave document' : 'Save document'">
+					<button
+						:class="[
+							'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+							isSaved
+								? 'text-primary bg-primary/10'
+								: 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/50',
+						]"
+						@click="citation && userData.toggleSaveDocument(citation)"
+						:aria-label="isSaved ? 'Unsave document' : 'Save document'"
+					>
+						<Bookmark :class="['h-3.5 w-3.5', isSaved ? 'fill-current' : '']" />
+					</button>
+				</Tooltip>
 				<div class="w-px h-4 bg-border/60 mx-0.5" />
 				<button
 					class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:text-foreground hover:bg-muted/50"

@@ -1,4 +1,5 @@
 import type { Citation, SearchQuery, ApiNode, QueryBuilderGroup, ApiEdge, SourceScope, ExpandResult } from '~/lib/types';
+import { DataSource, createDefaultSearchQuery } from '~/lib/types';
 import { respondentCodeToName, respondentStateToCode } from '~/lib/utils/respondent-state';
 import { defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
 import { RECHTSPRAAK_DOMAIN_ALIASES, RECHTSPRAAK_DOMAINS } from '~/lib/utils/constants';
@@ -409,6 +410,103 @@ export async function fetchExpandNode(
     }
 
     return await response.json();
+}
+
+/**
+ * Detect the data source from an ECLI string.
+ */
+export function detectSourceFromEcli(ecli: string): 'ECHR' | 'RS' | null {
+    const upper = ecli.toUpperCase();
+    if (upper.startsWith('ECLI:CE:ECHR:')) return 'ECHR';
+    if (upper.startsWith('ECLI:NL:')) return 'RS';
+    return null;
+}
+
+/**
+ * Fetch a single document by ECLI.
+ *
+ * Uses the combined search endpoint (ECLI equals query) for the document's own
+ * metadata, and the expand endpoint for citation relationships.  The two
+ * requests are fired in parallel to reduce latency.
+ */
+export async function fetchDocumentByEcli(
+    ecli: string,
+    signal?: AbortSignal
+): Promise<{
+    citation: Citation | null;
+    citedDocs: Citation[];
+    citesEclis: Set<string>;
+    citedByEclis: Set<string>;
+    error?: string;
+}> {
+    const dataset = detectSourceFromEcli(ecli);
+    if (!dataset) {
+        return { citation: null, citedDocs: [], citesEclis: new Set(), citedByEclis: new Set(), error: 'Unknown ECLI format' };
+    }
+
+    // Build a minimal combined-search query that matches this exact ECLI
+    const ecliQuery: SearchQuery = {
+        ...createDefaultSearchQuery(),
+        sources: [dataset === 'ECHR' ? DataSource.ECHR : DataSource.RS],
+        pageSize: 1,
+        page: 1,
+    };
+    const ecliGroup: QueryBuilderGroup = {
+        id: 'ecli-group',
+        operator: 'AND',
+        rules: [{ id: 'ecli-rule', field: 'ecli', operator: 'equals', value: ecli, sourceScope: dataset as SourceScope }],
+        groups: [],
+    };
+
+    try {
+        // Fire both requests in parallel
+        const [searchResult, expandResult] = await Promise.all([
+            fetchCombinedPage(ecliQuery, ecliGroup, 1, undefined, signal),
+            fetchExpandNode(ecli, {
+                degreesSource: 1,
+                degreesTarget: 1,
+                nodeDataset: dataset,
+            }, signal).catch(() => null), // expand may fail for docs with no citations – that's ok
+        ]);
+
+        // Document from search
+        const citation = searchResult.citations.length > 0 ? searchResult.citations[0] : null;
+
+        // Citation network from expand
+        const citesSet = new Set<string>();
+        const citedBySet = new Set<string>();
+        let citedDocs: Citation[] = [];
+
+        if (expandResult) {
+            for (const edge of expandResult.edges) {
+                if (edge.source === ecli) citesSet.add(edge.target);
+                if (edge.target === ecli) citedBySet.add(edge.source);
+            }
+
+            citedDocs = expandResult.expandedNodes
+                .filter((node) => {
+                    const nodeEcli = (node.data.ecli as string) || node.id;
+                    return nodeEcli !== ecli; // exclude the document itself if present
+                })
+                .map((node) => {
+                    const ds = String(node.data.dataset || '').toUpperCase();
+                    return ds === 'ECHR'
+                        ? transformEchrNode(node)
+                        : transformNetworkNode(node);
+                });
+        }
+
+        return { citation, citedDocs, citesEclis: citesSet, citedByEclis: citedBySet };
+    } catch (err) {
+        if ((err as Error).name === 'AbortError') throw err;
+        return {
+            citation: null,
+            citedDocs: [],
+            citesEclis: new Set(),
+            citedByEclis: new Set(),
+            error: err instanceof Error ? err.message : 'Failed to fetch document'
+        };
+    }
 }
 
 /**

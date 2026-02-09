@@ -14,6 +14,8 @@ import {
 } from "~/lib/utils/query-builder-url";
 import { useSearch } from "~/composables/useSearch";
 import { useHistory, type HistoryEntry } from "~/composables/useHistory";
+import { useUserData } from "~/composables/useUserData";
+import { useLibrary } from "~/composables/useLibrary";
 import { SEARCH_EXAMPLES } from "~/lib/utils/search-examples";
 
 const route = useRoute();
@@ -21,6 +23,8 @@ const router = useRouter();
 const store = useSearch();
 const history = useHistory();
 const smartSearch = useSmartSearch();
+const userDataStore = useUserData();
+const { libraryOpen, libraryWidth } = useLibrary();
 const queryBuilderOpen = ref(false);
 const showCompactLogo = computed(() => queryBuilderOpen.value);
 const submitError = ref<string | null>(null);
@@ -67,6 +71,7 @@ function navigateToResults() {
 		? smartSearch.searchString.value
 		: "";
 	history.add(nextQuery, undefined, rawSearchText);
+	if (rawSearchText) userDataStore.logSearch(rawSearchText);
 		const params = queryBuilderGroupToParams(
 			smartSearch.queryBuilderGroup.value,
 			{
@@ -171,7 +176,7 @@ onMounted(() => {
 
 <template>
 	<div
-		class="relative isolate h-screen overflow-hidden bg-gradient-to-b from-background via-background to-muted/30"
+		class="relative h-screen overflow-hidden bg-gradient-to-b from-background via-background to-muted/30"
 	>
 		<div class="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
 			<div
@@ -231,10 +236,13 @@ onMounted(() => {
 				"
 			/>
 		</div>
-		<div class="relative z-20 pointer-events-auto">
+		<div class="relative z-50 pointer-events-auto">
 			<AppHeader fixed />
 		</div>
-		<div class="fixed top-14 left-5 z-30">
+		<div
+			class="fixed top-14 z-30 transition-[left] duration-200"
+			:style="{ left: libraryOpen ? (libraryWidth + 5 + 20) + 'px' : '20px' }"
+		>
 			<span
 				class="inline-flex items-center rounded-lg bg-muted px-3 py-1 text-xs font-medium text-muted-foreground ring-1 ring-inset ring-border"
 			>

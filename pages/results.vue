@@ -19,6 +19,7 @@ import {
 	AlertCircle,
 } from "lucide-vue-next";
 import AppHeader from "~/components/shared/AppHeader.vue";
+import Tooltip from "~/components/ui/tooltip/Tooltip.vue";
 import AppFooter from "~/components/shared/AppFooter.vue";
 import QueryBuilder from "~/components/search/QueryBuilder.vue";
 import ResultList from "~/components/results/ResultList.vue";
@@ -31,6 +32,7 @@ import Button from "~/components/ui/button/Button.vue";
 import { useSmartSearch } from "~/composables/useSmartSearch";
 import { useSearch } from "~/composables/useSearch";
 import { useHistory } from "~/composables/useHistory";
+import { useUserData } from "~/composables/useUserData";
 import type { Citation, SearchQuery, QueryBuilderGroup } from "~/lib/types";
 import { createDefaultSearchQuery } from "~/lib/types";
 import {
@@ -64,6 +66,7 @@ const route = useRoute();
 const router = useRouter();
 const store = useSearch();
 const history = useHistory();
+const userDataStore = useUserData();
 const smartSearch = useSmartSearch();
 
 const viewMode = ref<"compact" | "expanded">("expanded");
@@ -1310,6 +1313,7 @@ function handleSubmit() {
 		? smartSearch.searchString.value
 		: "";
 	history.add(store.query.value, store.results.value?.total, rawSearchText);
+	if (rawSearchText) userDataStore.logSearch(rawSearchText);
 }
 
 function handleEditSearch() {
@@ -1438,21 +1442,33 @@ function handleFindSimilar(citation: Citation) {
 						class="flex h-10 w-full items-stretch border-b border-border p-0 m-0"
 					>
 						<!-- Back to search -->
-						<button
-							class="group flex h-full w-10 shrink-0 items-center justify-center text-muted-foreground/60 transition-colors hover:text-foreground hover:bg-muted/40"
-							@click="handleEditSearch"
-							aria-label="Back to search"
-							title="Back to search"
-						>
-							<ArrowLeft
-								class="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5"
-							/>
-						</button>
+						<Tooltip text="Back to search">
+							<button
+								class="group flex h-full w-10 shrink-0 items-center justify-center text-muted-foreground/60 transition-colors hover:text-foreground hover:bg-muted/40"
+								@click="handleEditSearch"
+								aria-label="Back to search"
+							>
+								<ArrowLeft
+									class="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5"
+								/>
+							</button>
+						</Tooltip>
 						<div class="w-px self-stretch bg-border" />
 
 						<!-- Query summary (inline-editable values) + copy button -->
 						<div class="flex-1 min-w-0">
-							<div class="flex h-full items-center pl-4 pr-1 min-w-0">
+							<div class="flex h-full items-center pl-3 pr-1 min-w-0">
+								<!-- Copy (before query text) -->
+								<Tooltip v-if="summarySegments.length" text="Copy query">
+									<button
+										class="shrink-0 mr-2 flex items-center justify-center text-muted-foreground/30 transition-colors hover:text-foreground"
+										@click="copyQueryText"
+										aria-label="Copy query"
+									>
+										<Check v-if="queryCopied" class="h-3 w-3 text-emerald-500" />
+										<Copy v-else class="h-3 w-3" />
+									</button>
+								</Tooltip>
 								<div
 									v-if="summarySegments.length"
 									ref="marqueeRef"
@@ -1529,17 +1545,6 @@ function handleFindSimilar(citation: Citation) {
 								<span v-else class="text-xs text-muted-foreground/50"
 									>No search parameters</span
 								>
-								<!-- Copy (pinned next to query text) -->
-								<button
-									v-if="summarySegments.length"
-									class="shrink-0 ml-2 flex items-center justify-center text-muted-foreground/30 transition-colors hover:text-foreground"
-									@click="copyQueryText"
-									aria-label="Copy query"
-									title="Copy query"
-								>
-									<Check v-if="queryCopied" class="h-3 w-3 text-emerald-500" />
-									<Copy v-else class="h-3 w-3" />
-								</button>
 							</div>
 						</div>
 
@@ -1547,24 +1552,26 @@ function handleFindSimilar(citation: Citation) {
 						<div class="flex shrink-0 items-stretch">
 							<div class="w-px self-stretch bg-border" />
 							<!-- Edit in query builder -->
-							<button
-								class="flex h-full w-9 items-center justify-center text-muted-foreground/40 transition-colors hover:text-foreground hover:bg-muted/40"
-								@click="queryBuilderOpen = true"
-								aria-label="Edit query"
-								title="Edit query"
-							>
-								<Pencil class="h-3.5 w-3.5" />
-							</button>
+							<Tooltip text="Open query builder">
+								<button
+									class="flex h-full w-9 items-center justify-center text-muted-foreground/40 transition-colors hover:text-foreground hover:bg-muted/40"
+									@click="queryBuilderOpen = true"
+									aria-label="Open query builder"
+								>
+									<Pencil class="h-3.5 w-3.5" />
+								</button>
+							</Tooltip>
 							<div class="w-px self-stretch bg-border" />
 							<!-- Clear search -->
-							<button
-								class="flex h-full w-9 items-center justify-center text-muted-foreground/40 transition-colors hover:text-destructive hover:bg-muted/40"
-								@click="handleClear"
-								aria-label="Clear search"
-								title="Clear search"
-							>
-								<X class="h-3.5 w-3.5" />
-							</button>
+							<Tooltip text="Clear search">
+								<button
+									class="flex h-full w-9 items-center justify-center text-muted-foreground/40 transition-colors hover:text-destructive hover:bg-muted/40"
+									@click="handleClear"
+									aria-label="Clear search"
+								>
+									<X class="h-3.5 w-3.5" />
+								</button>
+							</Tooltip>
 						</div>
 					</div>
 					<div v-if="routeError" class="px-6 pb-2">

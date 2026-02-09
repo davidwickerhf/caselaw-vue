@@ -73,10 +73,10 @@ function formatTimestamp(timestamp: number) {
         </button>
         <button
           type="button"
-          class="opacity-0 transition-opacity group-hover:opacity-100"
+          class="text-muted-foreground/40 hover:text-foreground transition-colors"
           @click.stop="remove(entry.id)"
         >
-          <X class="h-4 w-4 text-muted-foreground" />
+          <X class="h-3.5 w-3.5" />
         </button>
       </li>
     </ul>
