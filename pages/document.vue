@@ -84,6 +84,42 @@ const textContentRef = ref<HTMLDivElement | null>(null);
 
 // ── Outline sidebar ──
 const outlineOpen = ref(true); // visible by default on large screens
+const outlineSearch = ref("");
+const docTextOutlineExpanded = ref(true);
+
+// --- Outline resize ---
+const OUTLINE_MIN = 200;
+const OUTLINE_MAX = 400;
+const OUTLINE_DEFAULT = 240;
+const outlineWidth = ref(OUTLINE_DEFAULT);
+let outlineResizing = false;
+let outlineResizeStartX = 0;
+let outlineResizeStartW = 0;
+
+function onOutlineResizeStart(event: MouseEvent) {
+	event.preventDefault();
+	outlineResizing = true;
+	outlineResizeStartX = event.clientX;
+	outlineResizeStartW = outlineWidth.value;
+	document.addEventListener("mousemove", onOutlineResizeMove);
+	document.addEventListener("mouseup", onOutlineResizeEnd);
+	document.body.style.cursor = "col-resize";
+	document.body.style.userSelect = "none";
+}
+
+function onOutlineResizeMove(event: MouseEvent) {
+	if (!outlineResizing) return;
+	const dx = event.clientX - outlineResizeStartX;
+	outlineWidth.value = Math.min(OUTLINE_MAX, Math.max(OUTLINE_MIN, outlineResizeStartW + dx));
+}
+
+function onOutlineResizeEnd() {
+	outlineResizing = false;
+	document.removeEventListener("mousemove", onOutlineResizeMove);
+	document.removeEventListener("mouseup", onOutlineResizeEnd);
+	document.body.style.cursor = "";
+	document.body.style.userSelect = "";
+}
 
 // ── Line highlight from URL ──
 const highlightedLine = ref<number | null>(null);
@@ -766,6 +802,45 @@ const outlineItems = computed<OutlineItem[]>(() => {
 	return items;
 });
 
+// Filtered outline items (search + collapse)
+const filteredOutlineItems = computed<OutlineItem[]>(() => {
+	const q = outlineSearch.value.trim().toLowerCase();
+	let items = outlineItems.value;
+
+	// Apply search filter
+	if (q) {
+		items = items.filter((item) => {
+			if (item.isSection) return true; // always show section headers
+			return item.text.toLowerCase().includes(q);
+		});
+		// Remove section headers that have no children after filtering
+		// (only "Document Text" can have children)
+		const filtered: OutlineItem[] = [];
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i];
+			if (item.sectionId === "section-fulltext") {
+				// Check if any non-section items follow before the next section
+				const hasChildren = items.slice(i + 1).some((next) => !next.isSection);
+				if (hasChildren || !q) filtered.push(item);
+				else filtered.push(item); // always show Document Text header
+			} else {
+				filtered.push(item);
+			}
+		}
+		items = filtered;
+	}
+
+	// Apply Document Text collapse (hide text heading children)
+	if (!docTextOutlineExpanded.value && !q) {
+		items = items.filter((item) => {
+			// Keep section items, filter out text headings (non-section items under Document Text)
+			return item.isSection || item.sectionId;
+		});
+	}
+
+	return items;
+});
+
 // ── Text search ──
 const searchMatches = computed<number[]>(() => {
 	if (!textSearchQuery.value || textSearchQuery.value.length < 2) return [];
@@ -1114,7 +1189,8 @@ watch(ecli, (newEcli) => {
 	textSearchOpen.value = false;
 	textSearchQuery.value = "";
 	textSearchIndex.value = 0;
-	outlineOpen.value = false;
+	// outlineOpen stays as-is so the sidebar persists across document navigation
+	outlineSearch.value = "";
 	highlightedLine.value = null;
 	selectionToolbar.value.visible = false;
 	highlightEditToolbar.value.visible = false;
@@ -1166,12 +1242,111 @@ useHead({
 		</div>
 
 		<!-- Document -->
-		<div v-else-if="citation" class="flex-1">
-			<!-- Document header (sticky below app header) -->
-			<div class="sticky top-12 z-20 bg-background/95 backdrop-blur border-b border-border doc-header-shadow">
-				<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-					<!-- Top bar -->
-					<div class="flex items-center gap-2 pt-5 pb-0">
+		<div v-else-if="citation" class="flex min-h-[calc(100vh-3rem)]">
+
+			<!-- ── Outline sidebar (full-height, attached to left) ── -->
+			<aside
+				v-if="outlineOpen && outlineItems.length > 0"
+				class="doc-outline-sidebar shrink-0 hidden lg:flex flex-col sticky top-12 self-start h-[calc(100vh-3rem)] overflow-hidden"
+				:style="{ width: outlineWidth + 'px' }"
+			>
+				<!-- Outline header -->
+				<div class="flex items-center justify-between px-4 py-3 shrink-0">
+					<span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Outline</span>
+					<Tooltip text="Close outline" side="right">
+						<button
+							class="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:text-foreground hover:bg-muted/50"
+							@click="outlineOpen = false"
+						>
+							<X class="h-3 w-3" />
+						</button>
+					</Tooltip>
+				</div>
+				<div class="h-px bg-border" />
+
+				<!-- Search input -->
+				<div class="px-3 py-2.5 shrink-0">
+					<div class="relative">
+						<Search class="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/50 pointer-events-none" />
+						<input
+							v-model="outlineSearch"
+							type="text"
+							placeholder="Search outline..."
+							class="w-full rounded-md border border-border/60 bg-muted/20 py-1.5 pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-border focus:bg-background transition-colors"
+						/>
+						<button
+							v-if="outlineSearch"
+							class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+							@click="outlineSearch = ''"
+						>
+							<X class="h-3 w-3" />
+						</button>
+					</div>
+				</div>
+				<div class="h-px bg-border" />
+
+				<!-- No results -->
+				<div v-if="outlineSearch && filteredOutlineItems.length === 0" class="px-4 py-6 text-center">
+					<p class="text-xs text-muted-foreground/60">No items match "{{ outlineSearch }}"</p>
+				</div>
+
+				<!-- Outline nav -->
+				<nav class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5 outline-nav">
+					<template v-for="item in filteredOutlineItems" :key="item.sectionId || item.lineNumber">
+						<!-- Document Text section: expandable -->
+						<div
+							v-if="item.sectionId === 'section-fulltext'"
+							class="outline-section-item group flex items-center gap-1 w-full text-left text-[11px] font-semibold leading-snug text-foreground/80 hover:text-foreground py-1.5 px-2 rounded transition-colors hover:bg-muted/50 cursor-pointer"
+							:title="item.text"
+							@click="scrollToOutlineItem(item)"
+						>
+							<button
+								class="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground/40 hover:text-foreground transition-colors -ml-0.5"
+								@click.stop="docTextOutlineExpanded = !docTextOutlineExpanded"
+								:title="docTextOutlineExpanded ? 'Collapse headings' : 'Expand headings'"
+							>
+								<ChevronDown v-if="docTextOutlineExpanded" class="h-3 w-3" />
+								<ChevronRight v-else class="h-3 w-3" />
+							</button>
+							<span class="truncate">{{ item.text }}</span>
+						</div>
+						<!-- Other section items -->
+						<button
+							v-else-if="item.isSection"
+							class="outline-section-item block w-full text-left text-[11px] font-semibold leading-snug text-foreground/80 hover:text-foreground py-1.5 px-2 rounded transition-colors truncate hover:bg-muted/50"
+							:title="item.text"
+							@click="scrollToOutlineItem(item)"
+						>
+							{{ item.text }}
+						</button>
+						<!-- Heading items (children of Document Text) -->
+						<button
+							v-else
+							class="block w-full text-left text-[11px] leading-snug text-muted-foreground hover:text-foreground py-1 px-2 pl-5 rounded transition-colors truncate hover:bg-muted/50"
+							:title="item.text"
+							@click="scrollToOutlineItem(item)"
+						>
+							{{ item.text }}
+						</button>
+					</template>
+				</nav>
+			</aside>
+			<!-- Outline resize handle -->
+			<div
+				v-if="outlineOpen && outlineItems.length > 0"
+				class="outline-drag-handle shrink-0 hidden lg:flex z-10 sticky top-12 self-start h-[calc(100vh-3rem)]"
+				@mousedown="onOutlineResizeStart"
+			>
+				<div class="h-full w-px bg-border" />
+			</div>
+
+			<!-- ── Main content area ── -->
+			<div class="flex-1 min-w-0">
+				<!-- Document header (sticky below app header) -->
+				<div class="sticky top-12 z-20 bg-background/95 backdrop-blur border-b border-border doc-header-shadow">
+					<div class="mx-auto max-w-5xl px-6 sm:px-8 lg:px-10">
+						<!-- Top bar -->
+						<div class="flex items-center gap-2 pt-5 pb-0">
 						<Tooltip text="Go back">
 							<button
 								class="group flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground hover:bg-muted/50 mr-1"
@@ -1335,47 +1510,11 @@ useHead({
 							</button>
 						</div>
 					</Transition>
+					</div>
 				</div>
-			</div>
-
-			<!-- Content with optional outline sidebar -->
-			<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 flex gap-0 lg:gap-8">
-				<!-- Outline sidebar (visible by default on lg+) -->
-				<Transition name="outline-slide">
-					<aside
-						v-if="outlineOpen && outlineItems.length > 0"
-						class="shrink-0 w-56 hidden lg:block"
-					>
-						<div class="sticky top-40">
-							<div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-3">
-								Outline
-							</div>
-							<nav class="space-y-0.5 max-h-[calc(100vh-14rem)] overflow-y-auto outline-nav">
-								<template v-for="item in outlineItems" :key="item.sectionId || item.lineNumber">
-									<button
-										v-if="item.isSection"
-										class="outline-section-item block w-full text-left text-[11px] font-semibold leading-snug text-foreground/80 hover:text-foreground py-1.5 px-2 rounded transition-colors truncate hover:bg-muted/50"
-										:title="item.text"
-										@click="scrollToOutlineItem(item)"
-									>
-										{{ item.text }}
-									</button>
-									<button
-										v-else
-										class="block w-full text-left text-[11px] leading-snug text-muted-foreground hover:text-foreground py-1 px-2 pl-4 rounded transition-colors truncate hover:bg-muted/50"
-										:title="item.text"
-										@click="scrollToOutlineItem(item)"
-									>
-										{{ item.text }}
-									</button>
-								</template>
-							</nav>
-						</div>
-					</aside>
-				</Transition>
 
 				<!-- Main content -->
-				<div class="flex-1 min-w-0 space-y-8">
+				<div class="mx-auto max-w-5xl w-full px-6 sm:px-8 lg:px-10 py-8 space-y-8">
 					<!-- Document-wide comments (above summary) -->
 					<section id="section-comments" class="scroll-mt-36">
 						<div class="flex items-center gap-2 mb-3">
@@ -1950,16 +2089,21 @@ useHead({
 	transform: translateY(-4px);
 }
 
-/* ── Outline slide transition ── */
-.outline-slide-enter-active,
-.outline-slide-leave-active {
-	transition: all 0.2s ease;
+/* ── Outline slide transition (sidebar + drag handle appear/disappear) ── */
+
+/* ── Outline sidebar ── */
+.doc-outline-sidebar {
+	min-width: 200px;
+	max-width: 400px;
 }
-.outline-slide-enter-from,
-.outline-slide-leave-to {
-	opacity: 0;
-	width: 0;
-	margin-right: 0;
+
+/* ── Outline drag handle ── */
+.outline-drag-handle {
+	width: 5px;
+	cursor: col-resize;
+	display: flex;
+	align-items: stretch;
+	justify-content: center;
 }
 
 /* ── Outline nav ── */
