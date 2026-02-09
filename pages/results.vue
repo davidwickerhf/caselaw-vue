@@ -13,6 +13,7 @@ import {
 	Filter,
 	Brackets,
 	ArrowLeft,
+	AlertCircle,
 	X,
 } from "lucide-vue-next";
 import AppHeader from "~/components/shared/AppHeader.vue";
@@ -68,7 +69,14 @@ const filtersCollapsed = ref(false);
 const syncingRoute = ref(false);
 const syncingSmartSearch = ref(false);
 const queryBuilderOpen = ref(false);
+const routeError = ref<string | null>(null);
 const lastAppliedSignature = ref("");
+const scopeConflictDetails = computed<{
+	echrRules: string[];
+	rsRules: string[];
+	commonRules: string[];
+	fix: string;
+} | null>(() => null);
 const summaryText = computed(() =>
 	summarySegments.value.map((seg) => seg.text).join(""),
 );
