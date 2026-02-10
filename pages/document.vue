@@ -138,6 +138,46 @@ function onOutlineResizeEnd() {
 	document.body.style.userSelect = "";
 }
 
+// --- Citations column resize ---
+const CITE_MIN_RATIO = 0.2; // min 20% of container
+const CITE_MAX_RATIO = 0.55; // max 55% of container
+const CITE_DEFAULT_RATIO = 0.32; // default 32%
+const citeWidthRatio = ref(CITE_DEFAULT_RATIO);
+let citeResizing = false;
+let citeResizeStartX = 0;
+let citeResizeStartRatio = 0;
+let citeContainerWidth = 0;
+
+function onCiteResizeStart(event: MouseEvent) {
+	event.preventDefault();
+	citeResizing = true;
+	citeResizeStartX = event.clientX;
+	citeResizeStartRatio = citeWidthRatio.value;
+	const container = (event.target as HTMLElement).closest("[data-doc-columns]");
+	citeContainerWidth = container?.clientWidth || window.innerWidth;
+	document.addEventListener("mousemove", onCiteResizeMove);
+	document.addEventListener("mouseup", onCiteResizeEnd);
+	document.body.style.cursor = "col-resize";
+	document.body.style.userSelect = "none";
+}
+
+function onCiteResizeMove(event: MouseEvent) {
+	if (!citeResizing) return;
+	// Dragging left = wider citations, dragging right = narrower citations
+	const dx = event.clientX - citeResizeStartX;
+	const dxRatio = dx / citeContainerWidth;
+	const newRatio = citeResizeStartRatio - dxRatio;
+	citeWidthRatio.value = Math.min(CITE_MAX_RATIO, Math.max(CITE_MIN_RATIO, newRatio));
+}
+
+function onCiteResizeEnd() {
+	citeResizing = false;
+	document.removeEventListener("mousemove", onCiteResizeMove);
+	document.removeEventListener("mouseup", onCiteResizeEnd);
+	document.body.style.cursor = "";
+	document.body.style.userSelect = "";
+}
+
 // ── Line highlight from URL ──
 const highlightedLine = ref<number | null>(null);
 const copiedLineNum = ref<number | null>(null);
@@ -1558,202 +1598,177 @@ useHead({
 				</div>
 
 				<!-- ── Main content area ── -->
-				<div class="flex-1 min-w-0">
-					<!-- Document header (sticky below app header) -->
+				<div class="flex-1 min-w-0 xl:flex xl:flex-col xl:h-[calc(100vh-3rem)] xl:overflow-hidden">
+					<!-- Document header -->
 					<div
-						class="sticky top-12 z-20 bg-background/95 backdrop-blur border-b border-border doc-header-shadow"
+						class="sticky top-12 xl:relative xl:top-0 z-20 bg-background/95 backdrop-blur border-b border-border doc-header-shadow shrink-0"
 					>
-						<div class="mx-auto max-w-5xl px-6 sm:px-8 lg:px-10">
-							<!-- Top bar -->
-							<div class="flex items-center gap-2 pt-5 pb-0">
+						<div class="px-6 sm:px-8 lg:px-10">
+							<!-- Single row: back + title/meta + actions -->
+							<div class="flex items-center gap-3 py-3">
+								<!-- Back button -->
 								<Tooltip text="Go back">
 									<button
-										class="group flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground hover:bg-muted/50 mr-1"
+										class="group flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground hover:bg-muted/50"
 										@click="goBack"
 										aria-label="Go back"
 									>
-										<ArrowLeft
-											class="h-4 w-4 transition-transform group-hover:-translate-x-0.5"
-										/>
+										<ArrowLeft class="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
 									</button>
 								</Tooltip>
-								<Badge
-									:variant="
-										citation.source === 'HUDOC' ? 'default' : 'secondary'
-									"
-									class="text-[10px] h-5 px-1.5"
-								>
-									{{ citation.source === "HUDOC" ? "ECHR" : "Rechtspraak" }}
-								</Badge>
-								<span
-									v-if="importanceLabel"
-									class="inline-flex items-center gap-0.5 text-[11px] text-amber-600 dark:text-amber-400"
-								>
-									<Star class="h-2.5 w-2.5 fill-current" />
-									{{ importanceLabel }}
-								</span>
-								<span
-									v-if="citation.document_type"
-									class="text-[10px] uppercase tracking-wider text-muted-foreground/50"
-								>
-									{{ citation.document_type }}
-								</span>
 
-								<div class="flex-1" />
+								<!-- Title block -->
+								<div class="flex-1 min-w-0">
+									<div class="flex items-center gap-2 mb-0.5">
+										<Badge
+											:variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
+											class="text-[10px] h-4.5 px-1.5 shrink-0"
+										>
+											{{ citation.source === "HUDOC" ? "ECHR" : "Rechtspraak" }}
+										</Badge>
+										<span
+											v-if="importanceLabel"
+											class="inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400 shrink-0"
+										>
+											<Star class="h-2.5 w-2.5 fill-current" />
+											{{ importanceLabel }}
+										</span>
+										<span
+											v-if="citation.document_type"
+											class="text-[9px] uppercase tracking-wider text-muted-foreground/40 shrink-0"
+										>
+											{{ citation.document_type }}
+										</span>
+									</div>
+									<h1 class="text-sm font-semibold leading-snug text-foreground truncate" :title="citation.title || citation.ecli">
+										{{ citation.title || citation.ecli }}
+									</h1>
+									<div class="flex items-center gap-1.5 mt-0.5">
+										<code class="text-[10px] text-muted-foreground/50 font-mono leading-none truncate">{{ citation.ecli }}</code>
+										<button
+											class="shrink-0 text-muted-foreground/25 transition-colors hover:text-foreground"
+											@click="copyEcli"
+											title="Copy ECLI"
+											aria-label="Copy ECLI"
+										>
+											<Check v-if="copied" class="h-2.5 w-2.5 text-emerald-500" />
+											<Copy v-else class="h-2.5 w-2.5" />
+										</button>
+									</div>
+								</div>
 
 								<!-- Actions -->
-								<Tooltip
-									v-if="citation.url_publication"
-									text="View original source"
-								>
-									<button
-										class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
-										@click="openOriginalDocument"
-										aria-label="View original source"
-									>
-										<Globe class="h-3.5 w-3.5" />
-									</button>
-								</Tooltip>
-								<Tooltip text="Copy document link">
-									<button
-										class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
-										@click="copyDocumentLink"
-										aria-label="Copy document link"
-									>
-										<Check
-											v-if="linkCopied"
-											class="h-3.5 w-3.5 text-emerald-500"
-										/>
-										<Link class="h-3.5 w-3.5" v-else />
-									</button>
-								</Tooltip>
-								<Tooltip :text="isSaved ? 'Unsave document' : 'Save document'">
-									<button
-										:class="[
-											'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-											isSaved
-												? 'text-primary bg-primary/10'
-												: 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/50',
-										]"
-										@click="toggleSave"
-										:aria-label="isSaved ? 'Unsave document' : 'Save document'"
-									>
-										<Bookmark
-											:class="['h-3.5 w-3.5', isSaved ? 'fill-current' : '']"
-										/>
-									</button>
-								</Tooltip>
-								<!-- Folder picker -->
-								<div class="relative">
-									<Tooltip text="Add to folder">
+								<div class="flex items-center gap-0.5 shrink-0">
+									<Tooltip v-if="citation.url_publication" text="View original source">
+										<button
+											class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
+											@click="openOriginalDocument"
+											aria-label="View original source"
+										>
+											<Globe class="h-3.5 w-3.5" />
+										</button>
+									</Tooltip>
+									<Tooltip text="Copy document link">
+										<button
+											class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
+											@click="copyDocumentLink"
+											aria-label="Copy document link"
+										>
+											<Check v-if="linkCopied" class="h-3.5 w-3.5 text-emerald-500" />
+											<Link class="h-3.5 w-3.5" v-else />
+										</button>
+									</Tooltip>
+									<div class="w-px h-4 bg-border/50 mx-0.5" />
+									<Tooltip :text="isSaved ? 'Unsave document' : 'Save document'">
 										<button
 											:class="[
 												'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-												folderPickerOpen
+												isSaved
 													? 'text-primary bg-primary/10'
 													: 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/50',
 											]"
-											@click="folderPickerOpen = !folderPickerOpen"
-											aria-label="Add to folder"
+											@click="toggleSave"
+											:aria-label="isSaved ? 'Unsave document' : 'Save document'"
 										>
-											<FolderInput class="h-3.5 w-3.5" />
+											<Bookmark :class="['h-3.5 w-3.5', isSaved ? 'fill-current' : '']" />
 										</button>
 									</Tooltip>
-									<!-- Backdrop to close on click outside -->
-									<div v-if="folderPickerOpen" class="fixed inset-0 z-20" @click="folderPickerOpen = false" />
-									<div
-										v-if="folderPickerOpen"
-										class="absolute right-0 top-9 z-30 w-48 rounded-lg border border-border/80 bg-popover shadow-xl py-1"
-									>
-										<div class="px-3 py-1.5 text-[9px] font-semibold text-muted-foreground/40 uppercase tracking-wider">Add to folder</div>
-										<template v-if="userData.folders.value.length > 0">
+									<!-- Folder picker -->
+									<div class="relative">
+										<Tooltip text="Add to folder">
 											<button
-												v-for="folder in userData.folders.value"
-												:key="folder.id"
-												class="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] text-foreground hover:bg-muted/50 transition-colors"
-												@click="addToFolder(folder.id)"
+												:class="[
+													'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+													folderPickerOpen
+														? 'text-primary bg-primary/10'
+														: 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/50',
+												]"
+												@click="folderPickerOpen = !folderPickerOpen"
+												aria-label="Add to folder"
 											>
-												<Folder class="h-3 w-3 text-muted-foreground/50" />
-												<span class="truncate flex-1">{{ folder.name }}</span>
-												<Check
-													v-if="citation && userData.getDocsInFolder(folder.id).some(d => d.ecli === citation!.ecli)"
-													class="h-3 w-3 text-primary shrink-0"
-												/>
+												<FolderInput class="h-3.5 w-3.5" />
 											</button>
-										</template>
-										<p v-else class="px-3 py-2 text-[10px] text-muted-foreground/40 italic">No folders yet. Create one from the Library sidebar.</p>
+										</Tooltip>
+										<div v-if="folderPickerOpen" class="fixed inset-0 z-20" @click="folderPickerOpen = false" />
+										<div
+											v-if="folderPickerOpen"
+											class="absolute right-0 top-9 z-30 w-48 rounded-lg border border-border/80 bg-popover shadow-xl py-1"
+										>
+											<div class="px-3 py-1.5 text-[9px] font-semibold text-muted-foreground/40 uppercase tracking-wider">Add to folder</div>
+											<template v-if="userData.folders.value.length > 0">
+												<button
+													v-for="folder in userData.folders.value"
+													:key="folder.id"
+													class="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] text-foreground hover:bg-muted/50 transition-colors"
+													@click="addToFolder(folder.id)"
+												>
+													<Folder class="h-3 w-3 text-muted-foreground/50" />
+													<span class="truncate flex-1">{{ folder.name }}</span>
+													<Check
+														v-if="citation && userData.getDocsInFolder(folder.id).some(d => d.ecli === citation!.ecli)"
+														class="h-3 w-3 text-primary shrink-0"
+													/>
+												</button>
+											</template>
+											<p v-else class="px-3 py-2 text-[10px] text-muted-foreground/40 italic">No folders yet. Create one from the Library sidebar.</p>
+										</div>
 									</div>
-								</div>
-								<div class="w-px h-4 bg-border/60 mx-0.5" />
-								<Tooltip
-									v-if="fullTextContent && fullTextExpanded"
-									text="Search in text (Ctrl+F)"
-								>
-									<button
-										:class="[
-											'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-											textSearchOpen
-												? 'text-primary bg-primary/10'
-												: 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/50',
-										]"
-										@click="
-											textSearchOpen ? closeTextSearch() : openTextSearch()
-										"
-										aria-label="Search in text"
-									>
-										<Search class="h-3.5 w-3.5" />
-									</button>
-								</Tooltip>
-								<Tooltip
-									v-if="outlineItems.length > 0 && fullTextExpanded"
-									text="Document outline"
-								>
-									<button
-										:class="[
-											'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-											outlineOpen
-												? 'text-primary bg-primary/10'
-												: 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/50',
-										]"
-										@click="outlineOpen = !outlineOpen"
-										aria-label="Document outline"
-									>
-										<List class="h-3.5 w-3.5" />
-									</button>
-								</Tooltip>
-							</div>
-
-							<!-- Title + ECLI -->
-							<div class="pt-2.5 pb-4 pl-10">
-								<h1 class="text-xl font-semibold leading-snug text-foreground">
-									{{ citation.title || citation.ecli }}
-								</h1>
-								<div class="flex items-center gap-1.5 mt-1.5">
-									<code
-										class="text-[11px] text-muted-foreground/60 font-mono leading-none"
-										>{{ citation.ecli }}</code
-									>
-									<button
-										class="shrink-0 text-muted-foreground/30 transition-colors hover:text-foreground"
-										@click="copyEcli"
-										title="Copy ECLI"
-										aria-label="Copy ECLI"
-									>
-										<Check v-if="copied" class="h-2.5 w-2.5 text-emerald-500" />
-										<Copy v-else class="h-2.5 w-2.5" />
-									</button>
+									<div class="w-px h-4 bg-border/50 mx-0.5" />
+									<Tooltip v-if="fullTextContent && fullTextExpanded" text="Search in text (Ctrl+F)">
+										<button
+											:class="[
+												'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+												textSearchOpen
+													? 'text-primary bg-primary/10'
+													: 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/50',
+											]"
+											@click="textSearchOpen ? closeTextSearch() : openTextSearch()"
+											aria-label="Search in text"
+										>
+											<Search class="h-3.5 w-3.5" />
+										</button>
+									</Tooltip>
+									<Tooltip v-if="outlineItems.length > 0 && fullTextExpanded" text="Document outline">
+										<button
+											:class="[
+												'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+												outlineOpen
+													? 'text-primary bg-primary/10'
+													: 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/50',
+											]"
+											@click="outlineOpen = !outlineOpen"
+											aria-label="Document outline"
+										>
+											<List class="h-3.5 w-3.5" />
+										</button>
+									</Tooltip>
 								</div>
 							</div>
 
 							<!-- Text search bar (slide in) -->
 							<Transition name="search-bar">
-								<div
-									v-if="textSearchOpen"
-									class="flex items-center gap-2 pb-3 pl-10"
-								>
-									<div
-										class="flex items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-1 text-xs flex-1 max-w-sm"
-									>
+								<div v-if="textSearchOpen" class="flex items-center gap-2 pb-3">
+									<div class="flex items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-1 text-xs flex-1 max-w-sm">
 										<Search class="h-3 w-3 text-muted-foreground/50 shrink-0" />
 										<input
 											ref="textSearchInputRef"
@@ -1761,43 +1776,20 @@ useHead({
 											type="text"
 											placeholder="Search in document..."
 											class="bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground/40 flex-1 min-w-0"
-											@keydown.enter.prevent="
-												$event.shiftKey ? prevMatch() : nextMatch()
-											"
+											@keydown.enter.prevent="$event.shiftKey ? prevMatch() : nextMatch()"
 											@keydown.escape="closeTextSearch"
 										/>
-										<span
-											v-if="textSearchQuery.length >= 2"
-											class="text-[10px] text-muted-foreground/50 tabular-nums shrink-0"
-										>
-											{{
-												totalMatches > 0
-													? `${textSearchIndex + 1}/${totalMatches}`
-													: "0"
-											}}
+										<span v-if="textSearchQuery.length >= 2" class="text-[10px] text-muted-foreground/50 tabular-nums shrink-0">
+											{{ totalMatches > 0 ? `${textSearchIndex + 1}/${totalMatches}` : "0" }}
 										</span>
 									</div>
-									<button
-										class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/50 hover:text-foreground transition-colors disabled:opacity-30"
-										@click="prevMatch"
-										:disabled="totalMatches === 0"
-										aria-label="Previous match"
-									>
+									<button class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/50 hover:text-foreground transition-colors disabled:opacity-30" @click="prevMatch" :disabled="totalMatches === 0" aria-label="Previous match">
 										<ChevronUp class="h-3.5 w-3.5" />
 									</button>
-									<button
-										class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/50 hover:text-foreground transition-colors disabled:opacity-30"
-										@click="nextMatch"
-										:disabled="totalMatches === 0"
-										aria-label="Next match"
-									>
+									<button class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/50 hover:text-foreground transition-colors disabled:opacity-30" @click="nextMatch" :disabled="totalMatches === 0" aria-label="Next match">
 										<ChevronDown class="h-3.5 w-3.5" />
 									</button>
-									<button
-										class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/40 hover:text-foreground transition-colors"
-										@click="closeTextSearch"
-										aria-label="Close search"
-									>
+									<button class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/40 hover:text-foreground transition-colors" @click="closeTextSearch" aria-label="Close search">
 										<X class="h-3 w-3" />
 									</button>
 								</div>
@@ -1806,11 +1798,13 @@ useHead({
 					</div>
 
 					<!-- Main content -->
-					<div
-						class="mx-auto max-w-5xl w-full px-6 sm:px-8 lg:px-10 py-8 space-y-8"
-					>
+					<div class="w-full px-6 sm:px-8 lg:px-10 py-8 xl:flex-1 xl:min-h-0 xl:py-0 xl:pr-0">
+					<div class="flex flex-col gap-8 xl:flex-row xl:gap-0 xl:h-full" data-doc-columns>
+					<!-- ═══ Left column: main content ═══ -->
+					<div class="flex-1 min-w-0 xl:overflow-y-auto xl:py-8 xl:pb-16 doc-column-scroll">
+					<div class="max-w-4xl mx-auto space-y-8">
 						<!-- Document-wide comments (above summary) -->
-						<section id="section-comments" class="scroll-mt-36">
+						<section id="section-comments" class="scroll-mt-36 xl:scroll-mt-4">
 							<div class="flex items-center gap-2 mb-3">
 								<MessageSquare class="h-4 w-4 text-muted-foreground/60" />
 								<div
@@ -1986,7 +1980,7 @@ useHead({
 						<!-- Summary / headnote -->
 						<section v-if="inlineTextContent" id="section-summary">
 							<div
-								class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-3 scroll-mt-36"
+								class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-3 scroll-mt-36 xl:scroll-mt-4"
 							>
 								Summary
 							</div>
@@ -2000,7 +1994,7 @@ useHead({
 						<!-- Metadata grid -->
 						<section id="section-metadata">
 							<div
-								class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-4 scroll-mt-36"
+								class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-4 scroll-mt-36 xl:scroll-mt-4"
 							>
 								Metadata
 							</div>
@@ -2172,7 +2166,7 @@ useHead({
 						<!-- Full text -->
 						<section id="section-fulltext">
 							<button
-								class="flex w-full items-center justify-between text-left scroll-mt-36"
+								class="flex w-full items-center justify-between text-left scroll-mt-36 xl:scroll-mt-4"
 								@click="toggleFullText"
 							>
 								<div class="flex items-center gap-2">
@@ -2604,11 +2598,30 @@ useHead({
 								</div>
 							</div>
 						</section>
+					</div>
+					</div>
+
+					<!-- ═══ Draggable divider between columns (xl only) ═══ -->
+					<div
+						v-if="(hasCitesSection || hasCitedBySection)"
+						class="doc-col-drag-handle shrink-0 hidden xl:flex z-10"
+						@mousedown="onCiteResizeStart"
+					>
+						<div class="h-full w-px bg-border" />
+					</div>
+
+					<!-- ═══ Right column: citations ═══ -->
+					<div
+						v-if="hasCitesSection || hasCitedBySection"
+						class="doc-cite-column xl:shrink-0 xl:overflow-y-auto xl:py-8 xl:pb-16 xl:pl-6 xl:pr-10 doc-column-scroll"
+						:style="{ '--cite-width': (citeWidthRatio * 100) + '%' }"
+					>
+						<div class="space-y-6">
 
 						<!-- Cited Documents -->
 						<section v-if="hasCitesSection" id="section-cited">
 							<button
-								class="flex w-full items-center justify-between text-left scroll-mt-36"
+								class="flex w-full items-center justify-between text-left scroll-mt-36 xl:scroll-mt-4"
 								@click="citesExpanded = !citesExpanded"
 							>
 								<div class="flex items-center gap-2">
@@ -2674,7 +2687,7 @@ useHead({
 						<!-- Cited By -->
 						<section v-if="hasCitedBySection" id="section-citedby">
 							<button
-								class="flex w-full items-center justify-between text-left scroll-mt-36"
+								class="flex w-full items-center justify-between text-left scroll-mt-36 xl:scroll-mt-4"
 								@click="citedByExpanded = !citedByExpanded"
 							>
 								<div class="flex items-center gap-2">
@@ -2735,9 +2748,10 @@ useHead({
 							</div>
 						</section>
 
-						<div v-if="hasCitedBySection" class="h-px bg-border" />
+						</div>
+					</div>
 
-						<div class="h-16" />
+					</div>
 					</div>
 				</div>
 			</div>
@@ -2751,6 +2765,39 @@ useHead({
 	box-shadow:
 		0 1px 3px 0 rgb(0 0 0 / 0.04),
 		0 1px 2px -1px rgb(0 0 0 / 0.04);
+}
+
+/* ── Citations column width (xl+ only) ── */
+@media (min-width: 1280px) {
+	.doc-cite-column {
+		flex-basis: var(--cite-width, 32%);
+		max-width: var(--cite-width, 32%);
+		min-width: 0;
+	}
+}
+
+/* ── Column divider drag handle ── */
+.doc-col-drag-handle {
+	width: 5px;
+	cursor: col-resize;
+	display: flex;
+	align-items: stretch;
+	justify-content: center;
+}
+
+/* ── Independent column scrolling (xl+) ── */
+.doc-column-scroll::-webkit-scrollbar {
+	width: 4px;
+}
+.doc-column-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+.doc-column-scroll::-webkit-scrollbar-thumb {
+	background-color: hsl(var(--border) / 0.5);
+	border-radius: 4px;
+}
+.doc-column-scroll::-webkit-scrollbar-thumb:hover {
+	background-color: hsl(var(--border));
 }
 
 /* ── Search bar transition ── */
