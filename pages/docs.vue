@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, Sparkles, ArrowRight, Layers, Quote, Calendar, Scale, CheckCircle2, AlertTriangle, Globe, SlidersHorizontal, ArrowUpDown, Rows, Link2, Lightbulb } from 'lucide-vue-next'
+import { BookOpen, Sparkles, ArrowRight, Layers, Quote, Calendar, Scale, CheckCircle2, AlertTriangle, Globe, SlidersHorizontal, ArrowUpDown, Rows, Link2, Lightbulb, FileText, Highlighter, MessageSquare, Bookmark, Folder, GitFork, Download, Eye, Activity } from 'lucide-vue-next'
 import AppHeader from '~/components/shared/AppHeader.vue'
 import AppFooter from '~/components/shared/AppFooter.vue'
 import Button from '~/components/ui/button/Button.vue'
@@ -98,6 +98,13 @@ const builderNotGroup = makeGroup('AND', [
                 <a href="#validation" class="block hover:text-foreground transition-colors">Validation Rules</a>
                 <a href="#editing" class="block hover:text-foreground transition-colors">Editing the Summary</a>
                 <a href="#filters" class="block hover:text-foreground transition-colors">Filters, Sorting, Pagination</a>
+                <a href="#bulk" class="block hover:text-foreground transition-colors">Bulk Actions & Export</a>
+                <div class="h-px bg-border/60" />
+                <a href="#document" class="block hover:text-foreground transition-colors">Document Viewer</a>
+                <a href="#annotations" class="block hover:text-foreground transition-colors">Highlights & Comments</a>
+                <a href="#graph" class="block hover:text-foreground transition-colors">Citation Graph</a>
+                <a href="#library" class="block hover:text-foreground transition-colors">Personal Library</a>
+                <div class="h-px bg-border/60" />
                 <a href="#errors" class="block hover:text-foreground transition-colors">Errors & Fixes</a>
                 <a href="#rules" class="block hover:text-foreground transition-colors">Rules & Limits</a>
                 <a href="#sharing" class="block hover:text-foreground transition-colors">Sharing & URLs</a>
@@ -651,6 +658,252 @@ const builderNotGroup = makeGroup('AND', [
                 </div>
                 <div class="text-xs text-muted-foreground">
                   Filters, sorting, and pagination context are encoded in the URL so you can share the exact view.
+                </div>
+              </div>
+            </section>
+
+            <section id="bulk" class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="h-px flex-1 bg-border/60" />
+                <h2 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Bulk actions & export</h2>
+                <div class="h-px flex-1 bg-border/60" />
+              </div>
+              <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <Download class="h-3.5 w-3.5 text-primary/70" />
+                Select and export multiple results
+              </div>
+              <p class="text-sm text-muted-foreground">
+                Use bulk actions to select multiple results and export them for further analysis.
+              </p>
+              <div class="grid gap-4 lg:grid-cols-3">
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Select all</div>
+                  <div class="text-xs text-muted-foreground">
+                    Click "Select All" to select all results in the current result set. Selection persists across pages.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Export CSV</div>
+                  <div class="text-xs text-muted-foreground">
+                    Export selected documents as a CSV file with ECLI, title, date, source, and metadata.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Export JSON</div>
+                  <div class="text-xs text-muted-foreground">
+                    Export selected documents as JSON with full metadata for programmatic processing.
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="document" class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="h-px flex-1 bg-border/60" />
+                <h2 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Document viewer</h2>
+                <div class="h-px flex-1 bg-border/60" />
+              </div>
+              <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <FileText class="h-3.5 w-3.5 text-primary/70" />
+                Read and analyze full case texts
+              </div>
+              <p class="text-sm text-muted-foreground">
+                The document viewer provides a comprehensive reading experience with navigation, search, and annotation tools.
+              </p>
+              <div class="grid gap-4 lg:grid-cols-2">
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Document outline</div>
+                  <div class="text-xs text-muted-foreground">
+                    A collapsible sidebar shows the document structure. Click headings to jump to sections.
+                    The outline is resizable and can be hidden on smaller screens.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">In‑document search</div>
+                  <div class="text-xs text-muted-foreground">
+                    Press <code class="text-foreground">Ctrl/Cmd + F</code> to search within the full text.
+                    Navigate between matches with arrow buttons.
+                  </div>
+                </div>
+              </div>
+              <div class="grid gap-4 lg:grid-cols-2">
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Multi‑language (ECHR)</div>
+                  <div class="text-xs text-muted-foreground">
+                    ECHR documents often have multiple language versions. Use the language selector to switch
+                    between English, French, and other available translations.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Resizable panels</div>
+                  <div class="text-xs text-muted-foreground">
+                    Drag the panel dividers to adjust the width of the outline, text area, and citations column.
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                <div class="text-xs font-semibold text-foreground">Citations sidebar</div>
+                <div class="text-xs text-muted-foreground">
+                  View documents cited by this case and cases that cite it. Click any citation to open that document.
+                  Expand/collapse the lists to see all references.
+                </div>
+              </div>
+            </section>
+
+            <section id="annotations" class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="h-px flex-1 bg-border/60" />
+                <h2 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Highlights & comments</h2>
+                <div class="h-px flex-1 bg-border/60" />
+              </div>
+              <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <Highlighter class="h-3.5 w-3.5 text-primary/70" />
+                Annotate documents for your research
+              </div>
+              <p class="text-sm text-muted-foreground">
+                Add highlights and comments to documents. Annotations are saved locally and can be shared via URL.
+              </p>
+              <div class="grid gap-4 lg:grid-cols-2">
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Color‑coded highlights</div>
+                  <div class="text-xs text-muted-foreground">
+                    Select text and choose from 5 highlight colors: yellow, green, blue, pink, or orange.
+                    Click a highlight to change its color or remove it.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Line‑anchored comments</div>
+                  <div class="text-xs text-muted-foreground">
+                    Add comments anchored to specific lines. Comments appear in the margin and can be edited or deleted.
+                  </div>
+                </div>
+              </div>
+              <div class="grid gap-4 lg:grid-cols-2">
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Document‑level notes</div>
+                  <div class="text-xs text-muted-foreground">
+                    Add general notes about the entire document. These appear at the top of the annotations list.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Share annotations</div>
+                  <div class="text-xs text-muted-foreground">
+                    Generate a shareable URL that includes your highlights and comments. Recipients can view
+                    and optionally save the shared annotations to their own library.
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                <div class="text-xs font-semibold text-foreground">Language‑specific annotations</div>
+                <div class="text-xs text-muted-foreground">
+                  For ECHR documents with multiple languages, highlights and line comments are scoped to the
+                  language version they were created on. Document‑level comments are visible across all versions.
+                </div>
+              </div>
+            </section>
+
+            <section id="graph" class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="h-px flex-1 bg-border/60" />
+                <h2 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Citation graph</h2>
+                <div class="h-px flex-1 bg-border/60" />
+              </div>
+              <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <GitFork class="h-3.5 w-3.5 text-primary/70" />
+                Explore citation networks visually
+              </div>
+              <p class="text-sm text-muted-foreground">
+                The citation graph visualizes relationships between cases. It shows both outgoing citations
+                (cases this document cites) and incoming citations (cases that cite this document).
+              </p>
+              <div class="grid gap-4 lg:grid-cols-3">
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Interactive nodes</div>
+                  <div class="text-xs text-muted-foreground">
+                    Each node represents a case. Hover to see the title; click to navigate and make that case the new center.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Breadcrumb history</div>
+                  <div class="text-xs text-muted-foreground">
+                    As you navigate through nodes, a breadcrumb trail appears. Click any crumb to jump back.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">Full‑page mode</div>
+                  <div class="text-xs text-muted-foreground">
+                    Expand the graph to a dedicated page for deeper exploration with more screen space.
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                <div class="text-xs font-semibold text-foreground">Graph controls</div>
+                <div class="text-xs text-muted-foreground">
+                  Zoom with scroll or pinch. Drag the canvas to pan. Drag nodes to reposition them.
+                  The graph uses a force‑directed layout that naturally clusters related cases.
+                </div>
+              </div>
+            </section>
+
+            <section id="library" class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="h-px flex-1 bg-border/60" />
+                <h2 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Personal library</h2>
+                <div class="h-px flex-1 bg-border/60" />
+              </div>
+              <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <Bookmark class="h-3.5 w-3.5 text-primary/70" />
+                Organize your research
+              </div>
+              <p class="text-sm text-muted-foreground">
+                The library sidebar helps you save, organize, and track your research progress.
+                All data is stored locally in your browser.
+              </p>
+              <div class="grid gap-4 lg:grid-cols-2">
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                    <Bookmark class="h-3 w-3 text-primary/70" />
+                    Saved documents
+                  </div>
+                  <div class="text-xs text-muted-foreground">
+                    Click the bookmark icon on any document to save it. Saved documents appear in the library sidebar.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                    <Folder class="h-3 w-3 text-primary/70" />
+                    Folders
+                  </div>
+                  <div class="text-xs text-muted-foreground">
+                    Create folders to organize saved documents. Drag and drop documents between folders.
+                  </div>
+                </div>
+              </div>
+              <div class="grid gap-4 lg:grid-cols-2">
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                    <Eye class="h-3 w-3 text-primary/70" />
+                    Recently viewed
+                  </div>
+                  <div class="text-xs text-muted-foreground">
+                    The library tracks your recently viewed documents (up to 30) so you can quickly return to them.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+                    <Activity class="h-3 w-3 text-primary/70" />
+                    Activity log
+                  </div>
+                  <div class="text-xs text-muted-foreground">
+                    View a timeline of your research activity: searches, document views, saves, highlights, and comments.
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                <div class="text-xs font-semibold text-foreground">Search history</div>
+                <div class="text-xs text-muted-foreground">
+                  Your recent searches are saved and can be re‑run with one click. Search history appears
+                  both on the home page and in the library sidebar.
                 </div>
               </div>
             </section>

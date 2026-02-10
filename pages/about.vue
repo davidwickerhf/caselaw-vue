@@ -11,6 +11,17 @@ import {
 	BookOpen,
 	ExternalLink,
 	Users,
+	Search,
+	Filter,
+	FileText,
+	Highlighter,
+	MessageSquare,
+	Folder,
+	GitFork,
+	Download,
+	Link2,
+	Bookmark,
+	Globe,
 } from "lucide-vue-next";
 import AppHeader from "~/components/shared/AppHeader.vue";
 import AppFooter from "~/components/shared/AppFooter.vue";
@@ -291,52 +302,187 @@ const collaborators = [
 						<h2
 							class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
 						>
-							What it does
+							Core features
 						</h2>
 						<div class="h-px flex-1 bg-border/60" />
 					</div>
-					<div class="grid gap-4 lg:grid-cols-3">
-						<div
-							class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2"
-						>
-							<div
-								class="flex items-center gap-2 text-xs font-semibold text-foreground"
-							>
-								<Target class="h-3.5 w-3.5 text-primary/70" />
-								Natural language → rules
-							</div>
-							<p class="text-sm text-muted-foreground">
-								The search bar parses countries, articles, years, ECLIs, and
-								quoted keywords into structured rules you can verify.
-							</p>
+
+					<!-- Search -->
+					<div class="space-y-3">
+						<div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+							<Search class="h-3.5 w-3.5 text-primary/70" />
+							Smart Search
 						</div>
-						<div
-							class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2"
-						>
-							<div
-								class="flex items-center gap-2 text-xs font-semibold text-foreground"
-							>
-								<Compass class="h-3.5 w-3.5 text-primary/70" />
-								Explainable query preview
+						<div class="grid gap-4 lg:grid-cols-3">
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Natural language parsing</div>
+								<p class="text-sm text-muted-foreground">
+									Type queries like "Article 6 Germany 2019" and watch them
+									transform into structured, verifiable rules.
+								</p>
 							</div>
-							<p class="text-sm text-muted-foreground">
-								Every query has a readable preview string that can be pasted
-								back into the search bar to reproduce the exact same results.
-							</p>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Visual query builder</div>
+								<p class="text-sm text-muted-foreground">
+									Build complex queries with AND/OR/NOT groups, exact operators,
+									and dataset scoping.
+								</p>
+							</div>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Explainable previews</div>
+								<p class="text-sm text-muted-foreground">
+									Every query shows a readable preview that can be copied and
+									shared to reproduce exact results.
+								</p>
+							</div>
 						</div>
-						<div
-							class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2"
-						>
-							<div
-								class="flex items-center gap-2 text-xs font-semibold text-foreground"
-							>
-								<ShieldCheck class="h-3.5 w-3.5 text-primary/70" />
-								Shareable results
+					</div>
+
+					<!-- Results -->
+					<div class="space-y-3">
+						<div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+							<Filter class="h-3.5 w-3.5 text-primary/70" />
+							Results & Filtering
+						</div>
+						<div class="grid gap-4 lg:grid-cols-3">
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Faceted filters</div>
+								<p class="text-sm text-muted-foreground">
+									Refine by source, article, state, importance, year, legal domain,
+									and court instance.
+								</p>
 							</div>
-							<p class="text-sm text-muted-foreground">
-								Filters, sorting, and pagination state are encoded in the URL
-								for precise, shareable results.
-							</p>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Bulk actions</div>
+								<p class="text-sm text-muted-foreground">
+									Select multiple results and export them as CSV or JSON for
+									further analysis.
+								</p>
+							</div>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Shareable URLs</div>
+								<p class="text-sm text-muted-foreground">
+									Filters, sorting, and pagination are encoded in the URL for
+									precise sharing.
+								</p>
+							</div>
+						</div>
+					</div>
+
+					<!-- Document viewer -->
+					<div class="space-y-3">
+						<div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+							<FileText class="h-3.5 w-3.5 text-primary/70" />
+							Document Viewer
+						</div>
+						<div class="grid gap-4 lg:grid-cols-3">
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Full text with outline</div>
+								<p class="text-sm text-muted-foreground">
+									Read complete judgments with a navigable outline sidebar and
+									in‑document search.
+								</p>
+							</div>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Highlights & comments</div>
+								<p class="text-sm text-muted-foreground">
+									Annotate text with color‑coded highlights and add line‑anchored
+									or document‑level comments.
+								</p>
+							</div>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Multi‑language support</div>
+								<p class="text-sm text-muted-foreground">
+									Switch between available language versions for ECHR documents
+									(e.g. English, French).
+								</p>
+							</div>
+						</div>
+					</div>
+
+					<!-- Citation graph -->
+					<div class="space-y-3">
+						<div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+							<GitFork class="h-3.5 w-3.5 text-primary/70" />
+							Citation Graph
+						</div>
+						<div class="grid gap-4 lg:grid-cols-3">
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Interactive network</div>
+								<p class="text-sm text-muted-foreground">
+									Visualize citations and cited‑by relationships in an interactive
+									force‑directed graph.
+								</p>
+							</div>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Graph exploration</div>
+								<p class="text-sm text-muted-foreground">
+									Click nodes to navigate through the network with breadcrumb
+									history for backtracking.
+								</p>
+							</div>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Full‑page view</div>
+								<p class="text-sm text-muted-foreground">
+									Expand to a dedicated graph page for deeper analysis of citation
+									networks.
+								</p>
+							</div>
+						</div>
+					</div>
+
+					<!-- Library -->
+					<div class="space-y-3">
+						<div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+							<Bookmark class="h-3.5 w-3.5 text-primary/70" />
+							Personal Library
+						</div>
+						<div class="grid gap-4 lg:grid-cols-3">
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Save & organize</div>
+								<p class="text-sm text-muted-foreground">
+									Bookmark documents and organize them into custom folders with
+									drag‑and‑drop.
+								</p>
+							</div>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Search & view history</div>
+								<p class="text-sm text-muted-foreground">
+									Access your recent searches and viewed documents to quickly
+									pick up where you left off.
+								</p>
+							</div>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Activity log</div>
+								<p class="text-sm text-muted-foreground">
+									Track your research activity including searches, saves,
+									highlights, and comments.
+								</p>
+							</div>
+						</div>
+					</div>
+
+					<!-- Sharing -->
+					<div class="space-y-3">
+						<div class="flex items-center gap-2 text-xs font-semibold text-foreground">
+							<Link2 class="h-3.5 w-3.5 text-primary/70" />
+							Sharing & Collaboration
+						</div>
+						<div class="grid gap-4 lg:grid-cols-2">
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Share annotations</div>
+								<p class="text-sm text-muted-foreground">
+									Generate shareable links that include your highlights and comments
+									for others to view and save.
+								</p>
+							</div>
+							<div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+								<div class="text-xs font-semibold text-foreground">Reproducible queries</div>
+								<p class="text-sm text-muted-foreground">
+									Copy query previews or share result URLs to give colleagues the
+									exact same search view.
+								</p>
+							</div>
 						</div>
 					</div>
 				</section>
