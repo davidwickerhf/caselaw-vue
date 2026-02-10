@@ -45,7 +45,4 @@ export default defineNuxtConfig({
       external: ['d3-force', 'd3-zoom', 'd3-selection', 'd3-drag', 'd3-dispatch', 'd3-quadtree', 'd3-timer', 'd3-interpolate', 'd3-color', 'd3-transition', 'd3-ease'],
     },
   },
-  alias: {
-    '~': '/Users/davidwickerhf/Projects/work/maastricht/citations/caselaw-vue'
-  }
 })
