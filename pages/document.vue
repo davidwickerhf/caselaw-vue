@@ -281,32 +281,51 @@ const ownComments = computed(() =>
 const sharedHighlightsFull = computed<Highlight[]>(() => {
 	const sa = sharedAnnotations.value;
 	if (!sa || (sharedAnnotationState.value !== 'active' && sharedAnnotationState.value !== 'ignored')) return [];
-	return sa.highlights.map((h, i) => ({
-		id: `__shared_hl_${i}`,
-		ecli: ecli.value,
-		startLine: h.startLine,
-		startOffset: h.startOffset,
-		endLine: h.endLine,
-		endOffset: h.endOffset,
-		text: h.text,
-		color: h.color,
-		languageCode: h.languageCode,
-		createdAt: 0,
-	}));
+	const own = ownHighlights.value;
+	return sa.highlights
+		.filter((h) => !own.some(
+			(e) =>
+				e.startLine === h.startLine &&
+				e.startOffset === h.startOffset &&
+				e.endLine === h.endLine &&
+				e.endOffset === h.endOffset &&
+				(!h.languageCode || e.languageCode === h.languageCode),
+		))
+		.map((h, i) => ({
+			id: `__shared_hl_${i}`,
+			ecli: ecli.value,
+			startLine: h.startLine,
+			startOffset: h.startOffset,
+			endLine: h.endLine,
+			endOffset: h.endOffset,
+			text: h.text,
+			color: h.color,
+			languageCode: h.languageCode,
+			createdAt: 0,
+		}));
 });
 const sharedCommentsFull = computed<DocComment[]>(() => {
 	const sa = sharedAnnotations.value;
 	if (!sa || (sharedAnnotationState.value !== 'active' && sharedAnnotationState.value !== 'ignored')) return [];
-	return sa.comments.map((c, i) => ({
-		id: `__shared_cm_${i}`,
-		ecli: ecli.value,
-		text: c.text,
-		startLine: c.startLine,
-		endLine: c.endLine,
-		languageCode: c.languageCode,
-		createdAt: 0,
-		updatedAt: 0,
-	}));
+	const own = ownComments.value;
+	return sa.comments
+		.filter((c) => !own.some(
+			(e) =>
+				e.text === c.text &&
+				e.startLine === c.startLine &&
+				e.endLine === c.endLine &&
+				(!c.languageCode || e.languageCode === c.languageCode),
+		))
+		.map((c, i) => ({
+			id: `__shared_cm_${i}`,
+			ecli: ecli.value,
+			text: c.text,
+			startLine: c.startLine,
+			endLine: c.endLine,
+			languageCode: c.languageCode,
+			createdAt: 0,
+			updatedAt: 0,
+		}));
 });
 
 // Merged annotations (own + shared overlay)
