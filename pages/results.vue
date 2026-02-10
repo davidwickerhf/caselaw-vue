@@ -61,6 +61,7 @@ import {
 	QUERY_BUILDER_OPERATORS,
 } from "~/lib/utils/query-builder-config";
 import type { SourceScope } from "~/lib/types";
+import { compressSearchParams, decompressSearchParams } from "~/lib/utils/compressed-url";
 
 const route = useRoute();
 const router = useRouter();
@@ -1025,11 +1026,12 @@ function applyQueryAndSearch(
 		if (store.detailOpen.value && store.selectedResult.value?.ecli) {
 			params.set("doc", store.selectedResult.value.ecli);
 		}
+		const compressed = compressSearchParams(params);
 		syncingRoute.value = true;
 		router
 			.replace({
 				path: "/results",
-				query: Object.fromEntries(params.entries()),
+				query: Object.fromEntries(compressed.entries()),
 			})
 			.finally(() => {
 				syncingRoute.value = false;
@@ -1104,11 +1106,7 @@ function handleClear() {
 }
 
 function applyRouteQuery() {
-	const params = new URLSearchParams();
-	for (const [key, value] of Object.entries(route.query)) {
-		if (Array.isArray(value)) params.set(key, value.join(","));
-		else if (value) params.set(key, value);
-	}
+	const params = decompressSearchParams(route.query as Record<string, string | (string | null)[] | undefined>);
 	// Restore open document from URL
 	const docEcli = params.get("doc");
 	pendingDocEcli.value = docEcli || null;

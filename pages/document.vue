@@ -70,6 +70,7 @@ import {
 import {
 	encodeAnnotations,
 	decodeAnnotations,
+	reconstructHighlightText,
 	hasAnnotations,
 	type SharedAnnotations,
 } from "~/lib/utils/share-annotations";
@@ -943,6 +944,19 @@ const parsedLines = computed<DocLine[]>(() => {
 
 	return lines;
 });
+
+// ── Reconstruct shared-highlight text once document lines are available ──
+// v2 shared URLs omit highlight text to keep URLs short.  Once the full text
+// has loaded we can derive the highlighted text from the line positions.
+watch(parsedLines, (lines) => {
+	const sa = sharedAnnotations.value;
+	if (!sa || lines.length === 0) return;
+	// Only reconstruct if any highlight is missing text
+	if (sa.highlights.every(h => h.text)) return;
+	reconstructHighlightText(sa, lines);
+	// Trigger reactivity so sharedHighlightsFull recomputes
+	sharedAnnotations.value = { ...sa };
+}, { immediate: true });
 
 /**
  * Detect heading lines.

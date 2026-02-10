@@ -38,7 +38,7 @@ export default defineNuxtConfig({
       (await import('@tailwindcss/vite')).default()
     ],
     optimizeDeps: {
-      include: ['d3-force', 'd3-zoom', 'd3-selection', 'd3-drag'],
+      include: ['d3-force', 'd3-zoom', 'd3-selection', 'd3-drag', 'pako'],
     },
     ssr: {
       // Keep d3 as external for SSR to avoid module resolution timeouts

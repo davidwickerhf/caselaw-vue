@@ -12,6 +12,7 @@ import { queryBuilderGroupToParams } from '~/lib/utils/query-builder-url'
 import { parseNaturalLanguageToQueryBuilderGroup } from '~/lib/parser/nl-query-parser'
 import { defaultScopeForField } from '~/lib/utils/query-builder-config'
 import { useSearch } from '~/composables/useSearch'
+import { compressSearchParams } from '~/lib/utils/compressed-url'
 
 const router = useRouter()
 const store = useSearch()
@@ -481,7 +482,8 @@ function buildResultsUrl(example: ExampleItem) {
   const params = queryBuilderGroupToParams(example.group, {
     searchString: example.searchText || undefined
   })
-  return `/results?${params.toString()}`
+  const compressed = compressSearchParams(params)
+  return `/results?${compressed.toString()}`
 }
 
 function testQuery(example: ExampleItem) {

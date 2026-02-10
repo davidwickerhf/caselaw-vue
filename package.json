@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
+    "@types/pako": "^2.0.4",
     "@vueuse/core": "^14.2.0",
     "@vueuse/nuxt": "^14.2.0",
     "class-variance-authority": "^0.7.1",
@@ -30,6 +31,7 @@
     "d3-zoom": "^3.0.0",
     "lucide-vue-next": "^0.563.0",
     "nuxt": "^3.21.0",
+    "pako": "^2.1.0",
     "radix-vue": "^1.9.17",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18",

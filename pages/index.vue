@@ -17,6 +17,7 @@ import { useHistory, type HistoryEntry } from "~/composables/useHistory";
 import { useUserData } from "~/composables/useUserData";
 import { useLibrary } from "~/composables/useLibrary";
 import { SEARCH_EXAMPLES } from "~/lib/utils/search-examples";
+import { compressSearchParams } from "~/lib/utils/compressed-url";
 
 const route = useRoute();
 const router = useRouter();
@@ -85,9 +86,10 @@ function navigateToResults() {
 				page: nextQuery.page,
 			},
 		);
+	const compressed = compressSearchParams(params);
 	router.push({
 		path: "/results",
-		query: Object.fromEntries(params.entries()),
+		query: Object.fromEntries(compressed.entries()),
 	});
 }
 
