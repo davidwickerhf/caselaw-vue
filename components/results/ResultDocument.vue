@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, defineAsyncComponent } from "vue";
 import {
 	ExternalLink,
 	Star,
@@ -20,6 +20,10 @@ import {
 	Link2,
 	Link,
 	Bookmark,
+	Maximize2,
+	GitFork,
+	FolderInput,
+	Folder,
 } from "lucide-vue-next";
 import Badge from "~/components/ui/badge/Badge.vue";
 import Button from "~/components/ui/button/Button.vue";
@@ -33,6 +37,10 @@ import {
 } from "~/lib/api/client";
 import { useUserData } from "~/composables/useUserData";
 
+const CitationGraph = defineAsyncComponent(() =>
+	import("~/components/shared/CitationGraph.vue"),
+);
+
 const props = defineProps<{
 	citation: Citation | null;
 }>();
@@ -43,12 +51,14 @@ const emit = defineEmits<{
 	selectCitation: [citation: Citation];
 }>();
 
+const router = useRouter();
 const userData = useUserData();
 const isSaved = computed(() => props.citation ? userData.isDocSaved(props.citation.ecli) : false);
 
 const copied = ref(false);
 const linkCopied = ref(false);
 const fullTextExpanded = ref(false);
+const graphExpanded = ref(false);
 const citedDocs = ref<Citation[]>([]);
 const citedLoading = ref(false);
 const citedError = ref<string | null>(null);
@@ -147,8 +157,7 @@ function getDocumentUrl(includeFrom = false) {
 
 function openDocumentPage() {
 	if (!props.citation) return;
-	if (typeof window === "undefined") return;
-	window.open(getDocumentUrl(true), "_blank");
+	router.push(getDocumentUrl(true));
 }
 
 function copyDocumentLink() {
@@ -428,6 +437,28 @@ function toggleCitedBy() {
 	if (citedByExpanded.value) ensureCitedLoaded();
 }
 
+function toggleGraph() {
+	graphExpanded.value = !graphExpanded.value;
+	if (graphExpanded.value) ensureCitedLoaded();
+}
+
+function openGraphPage() {
+	if (!props.citation) return;
+	router.push({ path: "/graph", query: { ecli: props.citation.ecli } });
+}
+
+// ── Folder picker ──
+const folderPickerOpen = ref(false);
+
+function addToFolder(folderId: string) {
+	if (!props.citation) return;
+	if (!userData.isDocSaved(props.citation.ecli)) {
+		userData.toggleSaveDocument(props.citation);
+	}
+	userData.addDocumentToFolder(props.citation.ecli, folderId);
+	folderPickerOpen.value = false;
+}
+
 // Reset state when citation changes and immediately fetch full text in background
 watch(
 	() => props.citation?.ecli,
@@ -435,8 +466,10 @@ watch(
 		// Skip reset on initial mount (no old value to clean up)
 		if (oldEcli) {
 			fullTextExpanded.value = false;
+			graphExpanded.value = false;
 			citesExpanded.value = false;
 			citedByExpanded.value = false;
+			folderPickerOpen.value = false;
 			citedDocs.value = [];
 			citedLoading.value = false;
 			citedError.value = null;
@@ -515,7 +548,7 @@ const metadataItems = computed(() => {
 		<!-- Sticky document header -->
 		<div class="shrink-0 sticky top-0 z-10 bg-background doc-header-shadow">
 			<!-- Top bar: meta pills + action icons -->
-			<div class="flex items-center gap-2 pl-5 pr-2 pt-6 pb-0">
+			<div class="flex items-center gap-2 pl-5 pr-2 pt-5 pb-0">
 				<Badge
 					:variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
 					class="text-[10px] h-5 px-1.5"
@@ -539,7 +572,7 @@ const metadataItems = computed(() => {
 				<!-- Spacer -->
 				<div class="flex-1" />
 
-				<!-- Compact action icons -->
+				<!-- Secondary action icons -->
 				<Tooltip v-if="citation.url_publication" text="View original source">
 					<button
 						class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
@@ -559,13 +592,13 @@ const metadataItems = computed(() => {
 						<Link class="h-3.5 w-3.5" v-else />
 					</button>
 				</Tooltip>
-				<Tooltip text="Open in new page">
+				<Tooltip text="Citation graph">
 					<button
 						class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
-						@click="openDocumentPage"
-						aria-label="Open in new page"
+						@click="openGraphPage"
+						aria-label="Open citation graph"
 					>
-						<ExternalLink class="h-3.5 w-3.5" />
+						<GitFork class="h-3.5 w-3.5" />
 					</button>
 				</Tooltip>
 				<Tooltip :text="isSaved ? 'Unsave document' : 'Save document'">
@@ -582,6 +615,48 @@ const metadataItems = computed(() => {
 						<Bookmark :class="['h-3.5 w-3.5', isSaved ? 'fill-current' : '']" />
 					</button>
 				</Tooltip>
+				<!-- Folder picker -->
+				<div class="relative">
+					<Tooltip text="Add to folder">
+						<button
+							:class="[
+								'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+								folderPickerOpen
+									? 'text-primary bg-primary/10'
+									: 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/50',
+							]"
+							@click="folderPickerOpen = !folderPickerOpen"
+							aria-label="Add to folder"
+						>
+							<FolderInput class="h-3.5 w-3.5" />
+						</button>
+					</Tooltip>
+					<div v-if="folderPickerOpen" class="fixed inset-0 z-20" @click="folderPickerOpen = false" />
+					<div
+						v-if="folderPickerOpen"
+						class="absolute right-0 top-9 z-30 w-48 rounded-lg border border-border/80 bg-popover shadow-xl py-1"
+					>
+						<div class="px-3 py-1.5 text-[9px] font-semibold text-muted-foreground/40 uppercase tracking-wider">Add to folder</div>
+						<template v-if="userData.folders.value.length > 0">
+							<button
+								v-for="folder in userData.folders.value"
+								:key="folder.id"
+								class="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] text-foreground hover:bg-muted/50 transition-colors"
+								@click="addToFolder(folder.id)"
+							>
+								<Folder class="h-3 w-3 text-muted-foreground/50" />
+								<span class="truncate flex-1">{{ folder.name }}</span>
+								<Check
+									v-if="userData.getDocsInFolder(folder.id).some((d) => d.ecli === citation!.ecli)"
+									class="h-3 w-3 text-primary shrink-0"
+								/>
+							</button>
+						</template>
+						<div v-else class="px-3 py-2 text-[10px] text-muted-foreground/50">
+							No folders yet. Create one in the Library.
+						</div>
+					</div>
+				</div>
 				<div class="w-px h-4 bg-border/60 mx-0.5" />
 				<button
 					class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:text-foreground hover:bg-muted/50"
@@ -594,7 +669,7 @@ const metadataItems = computed(() => {
 			</div>
 
 			<!-- Title + ECLI -->
-			<div class="pl-5 pr-3 pt-2.5 pb-3.5">
+			<div class="pl-5 pr-3 pt-2.5 pb-2">
 				<h2 class="text-[15px] font-semibold leading-snug text-foreground line-clamp-2">
 					{{ citation.title || citation.ecli }}
 				</h2>
@@ -612,6 +687,17 @@ const metadataItems = computed(() => {
 						<Copy v-else class="h-2.5 w-2.5" />
 					</button>
 				</div>
+			</div>
+
+			<!-- Open document button (prominent) -->
+			<div class="px-5 pb-3.5">
+				<button
+					class="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-3 py-1.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground"
+					@click="openDocumentPage"
+				>
+					<ExternalLink class="h-3 w-3" />
+					Open document
+				</button>
 			</div>
 			<div class="h-px bg-border" />
 		</div>
@@ -913,7 +999,62 @@ const metadataItems = computed(() => {
 				</div>
 			</div>
 
-			<div class="h-px bg-border" />
+			<div v-if="hasCitesSection || hasCitedBySection" class="h-px bg-border" />
+
+			<!-- Citations Graph (collapsible) -->
+			<div v-if="hasCitesSection || hasCitedBySection" class="px-5 py-0">
+				<div
+					class="flex w-full items-center justify-between py-4 cursor-pointer"
+					@click="toggleGraph"
+				>
+					<div class="flex items-center gap-2">
+						<div
+							class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
+						>
+							Citations Graph
+						</div>
+						<Badge variant="secondary" class="text-[10px] h-4 px-1.5">
+							{{ citesCount + citedByCount }}
+						</Badge>
+					</div>
+					<div class="flex items-center gap-1">
+						<Tooltip text="Open full-page graph">
+							<button
+								class="flex h-6 items-center gap-1 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted/50 transition-colors px-1.5 text-[9px]"
+								@click.stop="openGraphPage"
+								aria-label="Open full-page graph"
+							>
+								<Maximize2 class="h-3 w-3" />
+								<span class="hidden sm:inline">Expand</span>
+							</button>
+						</Tooltip>
+						<ChevronDown
+							v-if="!graphExpanded"
+							class="h-4 w-4 text-muted-foreground/60"
+						/>
+						<ChevronUp v-else class="h-4 w-4 text-muted-foreground/60" />
+					</div>
+				</div>
+
+				<div v-if="graphExpanded" class="pb-4">
+					<div v-if="citedLoading" class="flex items-center justify-center py-6">
+						<Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
+						<span class="ml-2 text-xs text-muted-foreground">Loading graph data...</span>
+					</div>
+					<ClientOnly v-else-if="citedLoaded && citation">
+						<CitationGraph
+							:root-ecli="citation.ecli"
+							:root-citation="citation"
+							:cites-eclis="expandCitesEclis"
+							:cited-by-eclis="expandCitedByEclis"
+							:cited-docs="citedDocs"
+							@navigate="(ecli: string) => router.push({ path: '/document', query: { ecli } })"
+						/>
+					</ClientOnly>
+				</div>
+			</div>
+
+			<div v-if="hasCitesSection || hasCitedBySection" class="h-px bg-border" />
 
 			<!-- Cited Documents section (outgoing: documents this case cites) -->
 			<div v-if="hasCitesSection" class="px-5 py-0">

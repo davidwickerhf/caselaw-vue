@@ -36,6 +36,8 @@ const props = defineProps({
 		default: () => new Set(),
 	},
 	citedDocs: { type: Array as PropType<Citation[]>, default: () => [] },
+	/** When true, the graph fills its container height instead of using a capped aspect ratio */
+	fullPage: { type: Boolean, default: false },
 });
 
 const emit = defineEmits<{
@@ -390,7 +392,9 @@ function updateSize() {
 	if (!containerRef.value) return;
 	const rect = containerRef.value.getBoundingClientRect();
 	width.value = rect.width;
-	height.value = Math.max(280, Math.min(rect.width * 0.55, 450));
+	height.value = props.fullPage
+		? Math.max(400, rect.height)
+		: Math.max(280, Math.min(rect.width * 0.55, 450));
 }
 
 onMounted(() => {
@@ -462,7 +466,7 @@ const labelZoomThreshold = computed(() => {
 </script>
 
 <template>
-	<div ref="containerRef" class="relative w-full select-none">
+	<div ref="containerRef" :class="['relative w-full select-none', fullPage ? 'h-full' : '']">
 		<!-- Controls -->
 		<div class="absolute top-2 right-2 z-10 flex items-center gap-1">
 			<button

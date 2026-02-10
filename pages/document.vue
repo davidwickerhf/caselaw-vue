@@ -42,6 +42,8 @@ import {
 	Folder,
 	Share2,
 	AlertTriangle,
+	Maximize2,
+	GitFork,
 } from "lucide-vue-next";
 import AppHeader from "~/components/shared/AppHeader.vue";
 import AppFooter from "~/components/shared/AppFooter.vue";
@@ -97,6 +99,7 @@ const citesEclis = ref<Set<string>>(new Set());
 const citedByEclis = ref<Set<string>>(new Set());
 const citesExpanded = ref(false);
 const citedByExpanded = ref(false);
+const graphExpanded = ref(true);
 
 // Full text
 const fullTextExpanded = ref(true);
@@ -1587,6 +1590,7 @@ watch(ecli, (newEcli) => {
 	fullTextExpanded.value = true;
 	citesExpanded.value = false;
 	citedByExpanded.value = false;
+	graphExpanded.value = true;
 	citedDocs.value = [];
 	citesEclis.value = new Set();
 	citedByEclis.value = new Set();
@@ -1872,6 +1876,15 @@ useHead({
 										>
 											<Check v-if="shareCopied" class="h-3.5 w-3.5 text-emerald-500" />
 											<Share2 class="h-3.5 w-3.5" v-else />
+										</button>
+									</Tooltip>
+									<Tooltip text="Citation graph">
+										<button
+											class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
+											@click="router.push({ path: '/graph', query: { ecli } })"
+											aria-label="Open citation graph"
+										>
+											<GitFork class="h-3.5 w-3.5" />
 										</button>
 									</Tooltip>
 									<div class="w-px h-4 bg-border/50 mx-0.5" />
@@ -2914,13 +2927,16 @@ useHead({
 					>
 						<div class="space-y-6">
 
-						<!-- Citations Graph -->
+						<!-- Citations Graph (collapsible, expanded by default) -->
 						<section
 							v-if="hasCitesSection || hasCitedBySection"
 							id="section-citation-graph"
 							class="scroll-mt-36 xl:scroll-mt-4"
 						>
-							<div class="flex items-center gap-2 mb-3">
+							<div
+								class="flex items-center gap-2 cursor-pointer"
+								@click="graphExpanded = !graphExpanded"
+							>
 								<div
 									class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
 								>
@@ -2929,18 +2945,36 @@ useHead({
 								<Badge variant="secondary" class="text-[10px] h-4 px-1.5">{{
 									citesCount + citedByCount
 								}}</Badge>
-							</div>
-							<ClientOnly>
-								<CitationGraph
-									v-if="citation"
-									:root-ecli="ecli"
-									:root-citation="citation"
-									:cites-eclis="citesEclis"
-									:cited-by-eclis="citedByEclis"
-									:cited-docs="citedDocs"
-									@navigate="(e: string) => router.push({ path: '/document', query: { ecli: e } })"
+								<div class="flex-1" />
+								<Tooltip text="Open full-page graph">
+									<button
+										class="flex h-6 items-center gap-1 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted/50 transition-colors px-1.5 text-[9px]"
+										@click.stop="router.push({ path: '/graph', query: { ecli } })"
+										aria-label="Open full-page graph"
+									>
+										<Maximize2 class="h-3 w-3" />
+										<span class="hidden sm:inline">Expand</span>
+									</button>
+								</Tooltip>
+								<ChevronDown
+									v-if="!graphExpanded"
+									class="h-4 w-4 text-muted-foreground/60"
 								/>
-							</ClientOnly>
+								<ChevronUp v-else class="h-4 w-4 text-muted-foreground/60" />
+							</div>
+							<div v-if="graphExpanded" class="mt-3">
+								<ClientOnly>
+									<CitationGraph
+										v-if="citation"
+										:root-ecli="ecli"
+										:root-citation="citation"
+										:cites-eclis="citesEclis"
+										:cited-by-eclis="citedByEclis"
+										:cited-docs="citedDocs"
+										@navigate="(e: string) => router.push({ path: '/document', query: { ecli: e } })"
+									/>
+								</ClientOnly>
+							</div>
 						</section>
 
 						<div v-if="hasCitesSection || hasCitedBySection" class="h-px bg-border xl:-ml-6 xl:-mr-10" />
