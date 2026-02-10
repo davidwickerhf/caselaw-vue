@@ -3,6 +3,19 @@ import { DataSource, createDefaultSearchQuery } from '~/lib/types';
 import { respondentCodeToName, respondentStateToCode } from '~/lib/utils/respondent-state';
 import { defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
 import { RECHTSPRAAK_DOMAIN_ALIASES, RECHTSPRAAK_DOMAINS } from '~/lib/utils/constants';
+import {
+    sanitizeText as sanitizeTextInput,
+    sanitizeFilterValue,
+    sanitizeCursor,
+    sanitizeEcli,
+    isValidEcli,
+    clampPageSize,
+    MAX_TEXT_LENGTH,
+    MAX_PAGE_SIZE,
+    MAX_RULES,
+    MAX_GROUPS,
+    MAX_RULES_PER_GROUP,
+} from '~/lib/utils/query-sanitize';
 
 const API_BASE = 'http://localhost:3000';
 
@@ -107,12 +120,12 @@ function normalizeRuleValue(field: string, value: string, scope: SourceScope): {
 
     switch (field) {
         case 'respondent_state': {
-            const code = respondentStateToCode(trimmed);
+            const code = respondentStateToCode(sanitizeFilterValue(trimmed));
             if (!code) return null;
             return { value: code, scope };
         }
         case 'domain': {
-            const normalized = normalizeDomainValue(trimmed);
+            const normalized = normalizeDomainValue(sanitizeFilterValue(trimmed));
             if (!normalized) return null;
             return { value: normalized, scope };
         }
@@ -137,7 +150,7 @@ function normalizeRuleValue(field: string, value: string, scope: SourceScope): {
             return { value: imp, scope };
         }
         case 'document_type': {
-            return normalizeDocumentType(trimmed, scope);
+            return normalizeDocumentType(sanitizeFilterValue(trimmed), scope);
         }
         case 'source': {
             const src = normalizeSourceValue(trimmed);
@@ -154,49 +167,66 @@ function normalizeRuleValue(field: string, value: string, scope: SourceScope): {
             if (!law) return null;
             return { value: law, scope };
         }
+        case 'ecli': {
+            // Validate ECLI format before sending to the API
+            const clean = sanitizeEcli(trimmed);
+            if (!clean) return null;
+            return { value: clean, scope };
+        }
+        case 'text':
+        case 'title':
+        case 'keywords': {
+            // Free-text fields: sanitise for script injection, cap length
+            const clean = sanitizeTextInput(trimmed);
+            if (!clean) return null;
+            return { value: clean, scope };
+        }
+        case 'instance':
+        case 'articles':
+        case 'application_number': {
+            // Short filter values
+            const clean = sanitizeFilterValue(trimmed);
+            if (!clean) return null;
+            return { value: clean, scope };
+        }
         default:
-            return { value: trimmed, scope };
+            // Fallback: sanitise as filter value
+            return { value: sanitizeFilterValue(trimmed), scope };
     }
 }
 
+function serializeRule(r: { field: string; operator: string; value: string; sourceScope?: SourceScope }) {
+    const field = String(r.field || '').trim();
+    const operator = String(r.operator || '').trim();
+    const rawValue = String(r.value || '').trim();
+    if (!field || !operator || !rawValue) return [];
+
+    let scope = normalizeRuleScope((r.sourceScope || defaultScopeForField(field)) as SourceScope, field);
+    if (scope === 'ANY' && !COMMON_FIELDS.has(field) && field !== 'document_type') {
+        scope = defaultScopeForField(field);
+    }
+
+    const normalized = normalizeRuleValue(field, rawValue, scope);
+    if (!normalized) return [];
+
+    return [{ field, operator, value: normalized.value, sourceScope: normalized.scope }];
+}
+
 function serializeQueryBuilder(group: QueryBuilderGroup) {
+    // Cap rules at the root level
     const rules = group.rules
-        .flatMap((r) => {
-            const field = String(r.field || '').trim();
-            const operator = String(r.operator || '').trim();
-            const rawValue = String(r.value || '').trim();
-            if (!field || !operator || !rawValue) return [];
+        .slice(0, MAX_RULES)
+        .flatMap(serializeRule);
 
-            let scope = normalizeRuleScope((r.sourceScope || defaultScopeForField(field)) as SourceScope, field);
-            if (scope === 'ANY' && !COMMON_FIELDS.has(field) && field !== 'document_type') {
-                scope = defaultScopeForField(field);
-            }
-
-            const normalized = normalizeRuleValue(field, rawValue, scope);
-            if (!normalized) return [];
-
-            return [{ field, operator, value: normalized.value, sourceScope: normalized.scope }];
-        });
-
-    const groups = group.groups.map((g) => ({
-        op: g.operator,
-        rules: g.rules.flatMap((r) => {
-            const field = String(r.field || '').trim();
-            const operator = String(r.operator || '').trim();
-            const rawValue = String(r.value || '').trim();
-            if (!field || !operator || !rawValue) return [];
-
-            let scope = normalizeRuleScope((r.sourceScope || defaultScopeForField(field)) as SourceScope, field);
-            if (scope === 'ANY' && !COMMON_FIELDS.has(field) && field !== 'document_type') {
-                scope = defaultScopeForField(field);
-            }
-
-            const normalized = normalizeRuleValue(field, rawValue, scope);
-            if (!normalized) return [];
-
-            return [{ field, operator, value: normalized.value, sourceScope: normalized.scope }];
-        })
-    }));
+    // Cap nested groups and rules per group
+    const groups = group.groups
+        .slice(0, MAX_GROUPS)
+        .map((g) => ({
+            op: g.operator,
+            rules: g.rules
+                .slice(0, MAX_RULES_PER_GROUP)
+                .flatMap(serializeRule)
+        }));
 
     return {
         op: group.operator,
@@ -320,15 +350,16 @@ export function buildCombinedPayload(
     cursor?: string,
 ) {
     const sortBy = query.sortBy === 'citations' ? 'citations' : 'date';
+    const sortDir = query.sortDirection === 'asc' ? 'asc' : 'desc';
     return {
         queryBuilder: serializeQueryBuilder(group),
         sort: {
             by: sortBy,
-            direction: query.sortDirection || 'desc'
+            direction: sortDir,
         },
         pagination: {
-            pageSize,
-            cursor: cursor || undefined
+            pageSize: clampPageSize(pageSize),
+            cursor: sanitizeCursor(cursor),
         }
     };
 }
@@ -392,10 +423,26 @@ export async function fetchExpandNode(
     options?: { degreesSource?: 0 | 1; degreesTarget?: 0 | 1; nodeDataset?: 'ECHR' | 'RS' },
     signal?: AbortSignal
 ): Promise<ExpandResult> {
-    const body: Record<string, unknown> = { nodeId };
-    if (options?.degreesSource) body.degreesSource = options.degreesSource;
-    if (options?.degreesTarget) body.degreesTarget = options.degreesTarget;
-    if (options?.nodeDataset) body.nodeDataset = options.nodeDataset;
+    // Validate nodeId (should be a valid ECLI)
+    const cleanNodeId = sanitizeEcli(nodeId);
+    if (!cleanNodeId) {
+        throw new Error('Invalid node ID (ECLI) for expand request.');
+    }
+
+    const body: Record<string, unknown> = { nodeId: cleanNodeId };
+
+    // Validate degrees (must be 0 or 1)
+    if (options?.degreesSource !== undefined) {
+        body.degreesSource = options.degreesSource === 1 ? 1 : 0;
+    }
+    if (options?.degreesTarget !== undefined) {
+        body.degreesTarget = options.degreesTarget === 1 ? 1 : 0;
+    }
+    // Validate dataset (allowlist)
+    if (options?.nodeDataset) {
+        const ds = options.nodeDataset.toUpperCase();
+        if (ds === 'ECHR' || ds === 'RS') body.nodeDataset = ds;
+    }
 
     const response = await fetch(`${API_BASE}/api/combined/expand`, {
         method: 'POST',
@@ -439,7 +486,13 @@ export async function fetchDocumentByEcli(
     citedByEclis: Set<string>;
     error?: string;
 }> {
-    const dataset = detectSourceFromEcli(ecli);
+    // Validate & sanitise the ECLI before any network call
+    const cleanEcli = sanitizeEcli(ecli);
+    if (!cleanEcli) {
+        return { citation: null, citedDocs: [], citesEclis: new Set(), citedByEclis: new Set(), error: 'Invalid ECLI format' };
+    }
+
+    const dataset = detectSourceFromEcli(cleanEcli);
     if (!dataset) {
         return { citation: null, citedDocs: [], citesEclis: new Set(), citedByEclis: new Set(), error: 'Unknown ECLI format' };
     }
@@ -454,7 +507,7 @@ export async function fetchDocumentByEcli(
     const ecliGroup: QueryBuilderGroup = {
         id: 'ecli-group',
         operator: 'AND',
-        rules: [{ id: 'ecli-rule', field: 'ecli', operator: 'equals', value: ecli, sourceScope: dataset as SourceScope }],
+        rules: [{ id: 'ecli-rule', field: 'ecli', operator: 'equals', value: cleanEcli, sourceScope: dataset as SourceScope }],
         groups: [],
     };
 
@@ -462,7 +515,7 @@ export async function fetchDocumentByEcli(
         // Fire both requests in parallel
         const [searchResult, expandResult] = await Promise.all([
             fetchCombinedPage(ecliQuery, ecliGroup, 1, undefined, signal),
-            fetchExpandNode(ecli, {
+            fetchExpandNode(cleanEcli, {
                 degreesSource: 1,
                 degreesTarget: 1,
                 nodeDataset: dataset,
@@ -479,14 +532,14 @@ export async function fetchDocumentByEcli(
 
         if (expandResult) {
             for (const edge of expandResult.edges) {
-                if (edge.source === ecli) citesSet.add(edge.target);
-                if (edge.target === ecli) citedBySet.add(edge.source);
+                if (edge.source === cleanEcli) citesSet.add(edge.target);
+                if (edge.target === cleanEcli) citedBySet.add(edge.source);
             }
 
             citedDocs = expandResult.expandedNodes
                 .filter((node) => {
                     const nodeEcli = (node.data.ecli as string) || node.id;
-                    return nodeEcli !== ecli; // exclude the document itself if present
+                    return nodeEcli !== cleanEcli; // exclude the document itself if present
                 })
                 .map((node) => {
                     const ds = String(node.data.dataset || '').toUpperCase();
@@ -552,13 +605,19 @@ export async function fetchDocumentFullText(
     source: 'HUDOC' | 'Rechtspraak',
     options?: { signal?: AbortSignal }
 ): Promise<FullTextResult> {
+    // Validate ECLI before sending to the API
+    const cleanEcli = sanitizeEcli(ecli);
+    if (!cleanEcli) {
+        return { fullText: null, error: 'Invalid ECLI format' };
+    }
+
     const signal = options?.signal;
     const endpoint = source === 'HUDOC'
         ? `${API_BASE}/api/echr/text`
         : `${API_BASE}/api/network/text`;
 
     try {
-        const body: Record<string, unknown> = { ecli };
+        const body: Record<string, unknown> = { ecli: cleanEcli };
 
         const response = await fetch(endpoint, {
             method: 'POST',

@@ -1,6 +1,17 @@
 import { createDefaultSearchQuery, DataSource, type ParsedToken, type QueryBuilderGroup, type QueryBuilderRule, type SearchQuery, type CommonSearchFilters, type SourceScope } from '~/lib/types';
 import { IMPORTANCE_LEVELS, RECHTSPRAAK_DOMAINS, RECHTSPRAAK_DOMAIN_ALIASES } from '~/lib/utils/constants';
 import { defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
+import {
+	sanitizeText,
+	sanitizeFilterValue,
+	sanitizeStringArray,
+	sanitizeEcli,
+	sanitizeCursor,
+	clampPageSize,
+	MAX_TEXT_LENGTH,
+	MAX_FILTER_VALUE_LENGTH,
+	MAX_ARRAY_ITEMS,
+} from '~/lib/utils/query-sanitize';
 
 function genId(): string {
 	return Math.random().toString(36).slice(2, 10);
@@ -619,68 +630,85 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 
 	if (sources.length > 0) {
 		const parsedSources: DataSource[] = [];
-		for (const source of sources) {
-			const upper = source.toUpperCase();
+		for (const source of sources.slice(0, 5)) {
+			const upper = sanitizeFilterValue(source).toUpperCase();
 			if (upper === 'ECHR' || upper === 'HUDOC') parsedSources.push(DataSource.ECHR);
 			else if (upper === 'RS' || upper === 'RECHTSPRAAK') parsedSources.push(DataSource.RS);
-			else return { error: `Unknown source "${source}".` };
+			else return { error: `Unknown source "${upper}".` };
 		}
 		query.sources = Array.from(new Set(parsedSources));
 	}
 
+	// ── Free-text fields (sanitised, length-capped) ──
 	const q = params.get('q');
-	if (q) query.text = q;
-	query.title = splitList(params.get('title'));
+	if (q) query.text = sanitizeText(q);
+	query.title = sanitizeStringArray(splitList(params.get('title')));
 	const echrQ = params.get('echrQ');
-	if (echrQ) query.scoped.echr.text = echrQ;
-	query.scoped.echr.title = splitList(params.get('echrTitle'));
+	if (echrQ) query.scoped.echr.text = sanitizeText(echrQ);
+	query.scoped.echr.title = sanitizeStringArray(splitList(params.get('echrTitle')));
 	const rsQ = params.get('rsQ');
-	if (rsQ) query.scoped.rs.text = rsQ;
-	query.scoped.rs.title = splitList(params.get('rsTitle'));
+	if (rsQ) query.scoped.rs.text = sanitizeText(rsQ);
+	query.scoped.rs.title = sanitizeStringArray(splitList(params.get('rsTitle')));
 
-	query.keywords = splitList(params.get('keywords'));
-	query.eclis = splitList(params.get('eclis'));
+	query.keywords = sanitizeStringArray(splitList(params.get('keywords')));
+
+	// ── ECLIs (format-validated) ──
+	query.eclis = splitList(params.get('eclis'))
+		.slice(0, MAX_ARRAY_ITEMS)
+		.map(e => sanitizeEcli(e))
+		.filter((e): e is string => e !== null);
 	const cursor = params.get('cursor') || params.get('echrCursor') || params.get('rsCursor');
-	if (cursor) query.cursor = cursor;
-	query.scoped.echr.keywords = splitList(params.get('echrKeywords'));
-	query.scoped.echr.eclis = splitList(params.get('echrEclis'));
-	query.scoped.rs.keywords = splitList(params.get('rsKeywords'));
-	query.scoped.rs.eclis = splitList(params.get('rsEclis'));
-	query.scoped.echr.articleViolated = splitList(params.get('echrArticleViolated'));
-	query.scoped.echr.articleApplied = splitList(params.get('echrArticleApplied'));
-	query.scoped.echr.articleNonViolated = splitList(params.get('echrArticleNonViolated'));
-	query.scoped.echr.respondentState = splitList(params.get('echrRespondentState'));
-	query.scoped.echr.documentType = splitList(params.get('echrDocumentType'));
-	query.scoped.rs.documentType = splitList(params.get('rsDocumentType'));
-	query.scoped.rs.instances = splitList(params.get('rsInstances'));
-	query.scoped.rs.domains = splitList(params.get('rsDomains'));
-	query.scoped.rs.articles = splitList(params.get('rsArticles'));
-	query.scoped.rs.selectedLaws = splitList(params.get('rsSelectedLaws'));
-	query.articleViolated = splitList(params.get('articleViolated'));
-	query.articleApplied = splitList(params.get('articleApplied'));
-	query.articleNonViolated = splitList(params.get('articleNonViolated'));
-	query.respondentState = splitList(params.get('respondentState'));
-	query.documentType = splitList(params.get('documentType'));
-	query.instances = splitList(params.get('instances'));
-	query.domains = splitList(params.get('domains'));
-	query.articles = splitList(params.get('articles'));
-	query.selectedLaws = splitList(params.get('selectedLaws'));
+	if (cursor) query.cursor = sanitizeCursor(cursor);
 
-	const importance = splitList(params.get('importance'));
+	query.scoped.echr.keywords = sanitizeStringArray(splitList(params.get('echrKeywords')));
+	query.scoped.echr.eclis = splitList(params.get('echrEclis'))
+		.slice(0, MAX_ARRAY_ITEMS)
+		.map(e => sanitizeEcli(e))
+		.filter((e): e is string => e !== null);
+	query.scoped.rs.keywords = sanitizeStringArray(splitList(params.get('rsKeywords')));
+	query.scoped.rs.eclis = splitList(params.get('rsEclis'))
+		.slice(0, MAX_ARRAY_ITEMS)
+		.map(e => sanitizeEcli(e))
+		.filter((e): e is string => e !== null);
+
+	// ── Filter arrays (sanitised, capped) ──
+	query.scoped.echr.articleViolated = sanitizeStringArray(splitList(params.get('echrArticleViolated')));
+	query.scoped.echr.articleApplied = sanitizeStringArray(splitList(params.get('echrArticleApplied')));
+	query.scoped.echr.articleNonViolated = sanitizeStringArray(splitList(params.get('echrArticleNonViolated')));
+	query.scoped.echr.respondentState = sanitizeStringArray(splitList(params.get('echrRespondentState')));
+	query.scoped.echr.documentType = sanitizeStringArray(splitList(params.get('echrDocumentType')));
+	query.scoped.rs.documentType = sanitizeStringArray(splitList(params.get('rsDocumentType')));
+	query.scoped.rs.instances = sanitizeStringArray(splitList(params.get('rsInstances')));
+	query.scoped.rs.domains = sanitizeStringArray(splitList(params.get('rsDomains')));
+	query.scoped.rs.articles = sanitizeStringArray(splitList(params.get('rsArticles')));
+	query.scoped.rs.selectedLaws = sanitizeStringArray(splitList(params.get('rsSelectedLaws')));
+	query.articleViolated = sanitizeStringArray(splitList(params.get('articleViolated')));
+	query.articleApplied = sanitizeStringArray(splitList(params.get('articleApplied')));
+	query.articleNonViolated = sanitizeStringArray(splitList(params.get('articleNonViolated')));
+	query.respondentState = sanitizeStringArray(splitList(params.get('respondentState')));
+	query.documentType = sanitizeStringArray(splitList(params.get('documentType')));
+	query.instances = sanitizeStringArray(splitList(params.get('instances')));
+	query.domains = sanitizeStringArray(splitList(params.get('domains')));
+	query.articles = sanitizeStringArray(splitList(params.get('articles')));
+	query.selectedLaws = sanitizeStringArray(splitList(params.get('selectedLaws')));
+
+	// ── Importance (numeric, bounded 1-4) ──
+	const importance = splitList(params.get('importance')).slice(0, 10);
 	if (importance.length > 0) {
-		const parsed = importance.map((v) => Number(v)).filter((v) => Number.isInteger(v));
-		if (parsed.length !== importance.length) return { error: 'Importance must be numeric.' };
+		const parsed = importance.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v >= 1 && v <= 4);
+		if (parsed.length !== importance.length) return { error: 'Importance must be 1-4.' };
 		query.importance = parsed;
 	}
-	const echrImportance = splitList(params.get('echrImportance'));
+	const echrImportance = splitList(params.get('echrImportance')).slice(0, 10);
 	if (echrImportance.length > 0) {
-		const parsed = echrImportance.map((v) => Number(v)).filter((v) => Number.isInteger(v));
-		if (parsed.length !== echrImportance.length) return { error: 'ECHR importance must be numeric.' };
+		const parsed = echrImportance.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v >= 1 && v <= 4);
+		if (parsed.length !== echrImportance.length) return { error: 'ECHR importance must be 1-4.' };
 		query.scoped.echr.importance = parsed;
 	}
-	query.language = splitList(params.get('language')).map((v) => v.toUpperCase());
-	query.scoped.echr.language = splitList(params.get('echrLanguage')).map((v) => v.toUpperCase());
+	query.language = splitList(params.get('language')).slice(0, MAX_ARRAY_ITEMS).map((v) => v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3));
+	query.scoped.echr.language = splitList(params.get('echrLanguage')).slice(0, MAX_ARRAY_ITEMS).map((v) => v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3));
 
+	// ── Dates (format-validated) ──
 	const dateStart = params.get('dateStart');
 	const dateEnd = params.get('dateEnd');
 	if (dateStart) {
@@ -732,6 +760,7 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 		query.scoped.rs.dateEnd = rsDateEnd;
 	}
 
+	// ── Sort (allowlist) ──
 	const sortBy = params.get('sortBy');
 	if (sortBy) {
 		if (!['date', 'citations'].includes(sortBy)) {
@@ -746,11 +775,12 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 		query.sortDirection = sortDirection as SearchQuery['sortDirection'];
 	}
 
+	// ── Page size (clamped) ──
 	const pageSize = params.get('pageSize');
 	if (pageSize) {
 		const num = Number(pageSize);
 		if (!Number.isInteger(num) || num < 1) return { error: 'Invalid pageSize value.' };
-		query.pageSize = num;
+		query.pageSize = clampPageSize(num);
 	}
 
 	return { query };

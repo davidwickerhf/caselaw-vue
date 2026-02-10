@@ -2,6 +2,16 @@ import type { QueryBuilderGroup, QueryBuilderRule, SourceScope, SearchQuery } fr
 import { createDefaultSearchQuery } from '~/lib/types';
 import { defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
 import { paramsToSearchQuery, searchQueryToQueryBuilderGroup } from '~/lib/utils/search-query';
+import {
+    sanitizeFilterValue,
+    sanitizeCursor,
+    clampPageSize,
+    MAX_QB_JSON_LENGTH,
+    MAX_RULES,
+    MAX_GROUPS,
+    MAX_RULES_PER_GROUP,
+    MAX_PAGE_SIZE,
+} from '~/lib/utils/query-sanitize';
 
 type UrlRule = {
     f: string;
@@ -66,13 +76,37 @@ function serializeGroup(group: QueryBuilderGroup): UrlPayload {
     };
 }
 
+/** Allowed field names (allowlist prevents sending arbitrary keys to the API). */
+const ALLOWED_FIELDS = new Set([
+    'text', 'title', 'ecli', 'keywords', 'year', 'dateStart', 'dateEnd',
+    'source', 'article_violated', 'article_applied', 'article_non_violated',
+    'respondent_state', 'application_number', 'document_type', 'importance',
+    'language', 'instance', 'domain', 'articles', 'selectedLaws',
+    'date_judgment_start', 'date_judgment_end', 'date_decision_start', 'date_decision_end',
+]);
+
+/** Allowed operators. */
+const ALLOWED_OPERATORS = new Set([
+    'contains', 'equals', 'not_contains', 'not_equals',
+    'after', 'before', 'lte', 'gte',
+]);
+
+/** Allowed scopes. */
+const ALLOWED_SCOPES = new Set(['ANY', 'ECHR', 'RS']);
+
 function parseRule(raw: UrlRule): QueryBuilderRule | null {
-    if (!raw || typeof raw !== 'object') return null;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const field = String(raw.f || '').trim();
     const operator = String(raw.o || '').trim();
-    const value = String(raw.v || '').trim();
+    const value = sanitizeFilterValue(String(raw.v || ''));
     if (!field || !operator || !value) return null;
-    const scope = (raw.s || defaultScopeForField(field)) as SourceScope;
+
+    // Allowlist field and operator to prevent arbitrary keys reaching the API
+    if (!ALLOWED_FIELDS.has(field)) return null;
+    if (!ALLOWED_OPERATORS.has(operator)) return null;
+
+    const rawScope = String(raw.s || '').trim();
+    const scope = (ALLOWED_SCOPES.has(rawScope) ? rawScope : defaultScopeForField(field)) as SourceScope;
     const normalizedScope = isFieldAllowed(scope, field) ? scope : defaultScopeForField(field);
     return {
         id: genId(),
@@ -84,18 +118,32 @@ function parseRule(raw: UrlRule): QueryBuilderRule | null {
 }
 
 function buildGroupFromPayload(payload: UrlPayload): QueryBuilderGroup {
+    // Cap the number of root-level rules
+    const rootRules = (payload.rules || [])
+        .slice(0, MAX_RULES)
+        .map(parseRule)
+        .filter((r): r is QueryBuilderRule => !!r);
+
     const root: QueryBuilderGroup = {
         id: genId(),
         operator: payload.op,
-        rules: payload.rules.map(parseRule).filter((r): r is QueryBuilderRule => !!r),
+        rules: rootRules,
         groups: []
     };
 
-    for (const group of payload.groups) {
+    // Cap the number of nested groups and rules per group
+    const groups = (payload.groups || []).slice(0, MAX_GROUPS);
+    for (const group of groups) {
+        if (!group || typeof group !== 'object' || Array.isArray(group)) continue;
+        if (!['AND', 'OR', 'NOT'].includes(group.op)) continue;
+        const groupRules = (group.rules || [])
+            .slice(0, MAX_RULES_PER_GROUP)
+            .map(parseRule)
+            .filter((r): r is QueryBuilderRule => !!r);
         root.groups.push({
             id: genId(),
             operator: group.op,
-            rules: group.rules.map(parseRule).filter((r): r is QueryBuilderRule => !!r),
+            rules: groupRules,
             groups: []
         });
     }
@@ -136,6 +184,9 @@ export function queryBuilderGroupToParams(
 export function paramsToQueryBuilderState(params: URLSearchParams): { state?: QueryBuilderUrlState; error?: string } {
     const qb = params.get('qb');
     if (qb) {
+        // ── Guard: max JSON payload size ──
+        if (qb.length > MAX_QB_JSON_LENGTH) return { error: 'Query builder payload too large.' };
+
         let payload: UrlPayload | null = null;
         try {
             payload = JSON.parse(qb);
@@ -143,30 +194,44 @@ export function paramsToQueryBuilderState(params: URLSearchParams): { state?: Qu
             return { error: 'Invalid query builder payload.' };
         }
 
-        if (!payload || typeof payload !== 'object') return { error: 'Invalid query builder payload.' };
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { error: 'Invalid query builder payload.' };
         if (!['AND', 'OR', 'NOT'].includes(payload.op)) return { error: 'Invalid query builder operator.' };
         if (!Array.isArray(payload.rules) || !Array.isArray(payload.groups)) return { error: 'Invalid query builder payload.' };
 
         const group = buildGroupFromPayload(payload);
+
+        // ── Pagination & sort (validated) ──
         const pageSize = params.get('pageSize');
-        const cursor = params.get('cursor') || params.get('echrCursor') || params.get('rsCursor') || undefined;
-        const searchString = params.get('searchString') || undefined;
-        const sortBy = params.get('sortBy') as SearchQuery['sortBy'] | null;
-        const sortDirection = params.get('sortDirection') as SearchQuery['sortDirection'] | null;
+        const cursor = sanitizeCursor(params.get('cursor') || params.get('echrCursor') || params.get('rsCursor') || undefined);
+        const searchString = params.get('searchString')
+            ? sanitizeFilterValue(params.get('searchString')!)
+            : undefined;
+
+        const rawSortBy = params.get('sortBy');
+        const sortBy = rawSortBy && ['date', 'citations'].includes(rawSortBy)
+            ? rawSortBy as SearchQuery['sortBy']
+            : undefined;
+
+        const rawSortDir = params.get('sortDirection');
+        const sortDirection = rawSortDir && ['asc', 'desc'].includes(rawSortDir)
+            ? rawSortDir as SearchQuery['sortDirection']
+            : undefined;
+
         const page = params.get('page');
-        const parsedPage = page ? Number(page) : undefined;
+        const parsedPage = page ? Math.max(1, Math.min(Math.round(Number(page)) || 1, 10_000)) : undefined;
+
         if (pageSize) {
             const num = Number(pageSize);
             if (!Number.isInteger(num) || num < 1) return { error: 'Invalid pageSize value.' };
             return {
                 state: {
                     group,
-                    pageSize: num,
+                    pageSize: clampPageSize(num),
                     cursor,
                     searchString,
-                    sortBy: sortBy || undefined,
-                    sortDirection: sortDirection || undefined,
-                    page: parsedPage && parsedPage > 0 ? parsedPage : undefined,
+                    sortBy,
+                    sortDirection,
+                    page: parsedPage,
                 }
             };
         }
@@ -175,26 +240,38 @@ export function paramsToQueryBuilderState(params: URLSearchParams): { state?: Qu
                 group,
                 cursor,
                 searchString,
-                sortBy: sortBy || undefined,
-                sortDirection: sortDirection || undefined,
-                page: parsedPage && parsedPage > 0 ? parsedPage : undefined,
+                sortBy,
+                sortDirection,
+                page: parsedPage,
             }
         };
     }
 
     // Fallback to legacy params (ignore free-text query)
+    // paramsToSearchQuery already applies full sanitisation
     const legacy = paramsToSearchQuery(params);
     if (!legacy.query) return { error: legacy.error || 'Invalid parameters.' };
     legacy.query.text = '';
     legacy.query.scoped.echr.text = '';
     legacy.query.scoped.rs.text = '';
     const group = searchQueryToQueryBuilderGroup(legacy.query);
-    const searchString = params.get('searchString') || undefined;
-    const cursor = params.get('cursor') || params.get('echrCursor') || params.get('rsCursor') || undefined;
-    const sortBy = params.get('sortBy') as SearchQuery['sortBy'] | null;
-    const sortDirection = params.get('sortDirection') as SearchQuery['sortDirection'] | null;
+    const searchString = params.get('searchString')
+        ? sanitizeFilterValue(params.get('searchString')!)
+        : undefined;
+    const cursor = sanitizeCursor(params.get('cursor') || params.get('echrCursor') || params.get('rsCursor') || undefined);
+
+    const rawSortBy = params.get('sortBy');
+    const sortBy = rawSortBy && ['date', 'citations'].includes(rawSortBy)
+        ? rawSortBy as SearchQuery['sortBy']
+        : undefined;
+
+    const rawSortDir = params.get('sortDirection');
+    const sortDirection = rawSortDir && ['asc', 'desc'].includes(rawSortDir)
+        ? rawSortDir as SearchQuery['sortDirection']
+        : undefined;
+
     const page = params.get('page');
-    const parsedPage = page ? Number(page) : undefined;
+    const parsedPage = page ? Math.max(1, Math.min(Math.round(Number(page)) || 1, 10_000)) : undefined;
     return {
         state: {
             group,
