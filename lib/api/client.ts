@@ -16,8 +16,12 @@ import {
     MAX_GROUPS,
     MAX_RULES_PER_GROUP,
 } from '~/lib/utils/query-sanitize';
-
-const API_BASE = 'http://localhost:3000';
+/**
+ * API base path — empty string means same-origin.  All /api/** requests are
+ * proxied through Nitro (configured in nuxt.config.ts) to the actual backend,
+ * which eliminates CORS in both dev and production.
+ */
+const API_BASE = '';
 
 const DEFAULT_PAGE_SIZE = 50;
 
