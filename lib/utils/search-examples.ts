@@ -19,31 +19,18 @@ const EN_COUNTRIES = [
     'Austria'
 ];
 
-const NL_COUNTRIES = [
-    'Duitsland',
-    'Frankrijk',
+const NL_COUNTRIES_TOP = [
     'Turkije',
-    'Armenie',
-    'Nederland',
+    'Frankrijk',
     'Italie',
-    'Spanje',
+    'Roemenië',
     'Polen',
-    'Belgie',
-    'Zwitserland',
+    'Spanje',
     'Griekenland',
-    'Portugal',
-    'Noorwegen',
-    'Zweden',
-    'Denemarken',
-    'Ierland',
-    'Tsjechie',
-    'Oostenrijk'
+    'Belgie'
 ];
 
 const YEARS = [
-    '2010',
-    '2011',
-    '2012',
     '2013',
     '2014',
     '2015',
@@ -55,12 +42,10 @@ const YEARS = [
     '2021',
     '2022',
     '2023',
-    '2024',
-    '2025',
-    '2026'
+    '2024'
 ];
 
-const ARTICLES = ['2', '3', '5', '6', '8', '10', '14', 'P1-1'];
+const ARTICLES = ['2', '3', '5', '6', '8', '10', '14'];
 
 const DOMAINS = [
     'Strafrecht',
@@ -85,19 +70,6 @@ const INSTANCES = [
     'Rechtbank Noord-Holland'
 ];
 
-const DOC_TYPES_EN = [
-    'judgment',
-    'decision',
-    'grand chamber judgment',
-    'communicated case'
-];
-
-const DOC_TYPES_NL = [
-    'beslissing',
-    'uitspraak',
-    'grote kamer arrest',
-    'communicated case'
-];
 
 const KEYWORDS = [
     '"right to life"',
@@ -107,10 +79,8 @@ const KEYWORDS = [
     '"property rights"',
     '"due process"',
     '"asylum seeker"',
-    '"tax law"',
     '"data protection"',
-    '"family life"',
-    '"detention conditions"'
+    '"family life"'
 ];
 
 const TITLES = [
@@ -150,20 +120,15 @@ function buildExamples(): string[] {
 
     while (examples.size < 200 && i < maxTries) {
         const country = pick(EN_COUNTRIES, i);
-        const countryNl = pick(NL_COUNTRIES, i);
         const year = pick(YEARS, i);
         const article = pick(ARTICLES, i);
         const domain = pick(DOMAINS, i);
         const instance = pick(INSTANCES, i);
-        const docEn = pick(DOC_TYPES_EN, i);
-        const docNl = pick(DOC_TYPES_NL, i);
         const keyword = pick(KEYWORDS, i);
         const title = pick(TITLES, i);
         const language = pick(LANGUAGES, i);
         const exactDate = pick(DATE_EXACTS, i);
         const [start, end] = pickRange(i);
-        const app = `${10000 + i}/${(10 + (i % 90)).toString().padStart(2, '0')}`;
-        const law = `BWBX${1000 + (i % 9000)}|${10 + (i % 80)}`;
 
         switch (i % 20) {
             case 0:
@@ -173,13 +138,13 @@ function buildExamples(): string[] {
                 examples.add(`Cases in ${country} from ${start} to ${end}`);
                 break;
             case 2:
-                examples.add(`ECHR Article ${article} violated in ${country} ${year}`);
+                examples.add(`ECHR Article ${article} violated in ${country}`);
                 break;
             case 3:
                 examples.add(`ECHR Article ${article} non-violated in ${country}`);
                 break;
             case 4:
-                examples.add(`ECHR ${docEn} ${year}`);
+                examples.add(`ECHR judgment ${country} ${year}`);
                 break;
             case 5:
                 examples.add(`Rechtspraak ${domain} ${year}`);
@@ -188,31 +153,31 @@ function buildExamples(): string[] {
                 examples.add(`Rechtspraak ${instance} ${year}`);
                 break;
             case 7:
-                examples.add(`EHRM artikel ${article} geschonden in ${countryNl}`);
+                examples.add(`EHRM artikel ${article} geschonden in ${pick(NL_COUNTRIES_TOP, i)}`);
                 break;
             case 8:
-                examples.add(`EHRM artikel ${article} niet geschonden in ${countryNl}`);
+                examples.add(`EHRM artikel ${article} niet geschonden in ${pick(NL_COUNTRIES_TOP, i)}`);
                 break;
             case 9:
-                examples.add(`Uitspraken in ${countryNl} in ${year}`);
+                examples.add(`Cases in ${country} with Article ${article}`);
                 break;
             case 10:
-                examples.add(`EHRM ${docNl} ${year}`);
+                examples.add(`ECHR judgment in ${country} between ${start} and ${end}`);
                 break;
             case 11:
-                examples.add(`ECHR application number ${app} and ${keyword}`);
+                examples.add(`ECHR ${keyword} between ${start} and ${end}`);
                 break;
             case 12:
-                examples.add(`ECHR ${keyword} ${country} ${year}`);
+                examples.add(`ECHR ${keyword} ${country}`);
                 break;
             case 13:
-                examples.add(`ECHR Article ${article} ${keyword} ${year}`);
+                examples.add(`ECHR Article ${article} violated ${year}`);
                 break;
             case 14:
                 examples.add(`Rechtspraak ${domain} ${instance} ${year}`);
                 break;
             case 15:
-                examples.add(`title ${title} ${year}`);
+                examples.add(`title ${title}`);
                 break;
             case 16:
                 examples.add(`language ${language} judgment date on ${exactDate}`);
@@ -221,10 +186,10 @@ function buildExamples(): string[] {
                 examples.add(`decision date before ${exactDate} ${keyword}`);
                 break;
             case 18:
-                examples.add(`selected law ${law} ${year}`);
+                examples.add(`Rechtspraak ${instance} between ${start} and ${end}`);
                 break;
             case 19:
-                examples.add(`Rechtspraak articles "BWBR0001830" ${year}`);
+                examples.add(`Rechtspraak ${domain} between ${start} and ${end}`);
                 break;
             default:
                 break;

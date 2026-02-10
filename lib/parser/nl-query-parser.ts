@@ -461,7 +461,7 @@ function parseGroupFromText(input: string): QueryBuilderGroup {
             id: genId(),
             field: 'text',
             operator: 'contains',
-            value: '',
+            value: remaining,
             sourceScope: 'ANY'
         });
     }
@@ -603,11 +603,12 @@ export function parseNaturalLanguageToQueryBuilderGroup(input: string): QueryBui
     }
 
     if (root.rules.length === 0 && root.groups.length === 0) {
+        const fallbackText = removeSpans(input, spans);
         root.rules.push({
             id: genId(),
             field: 'text',
             operator: 'contains',
-            value: '',
+            value: fallbackText,
             sourceScope: 'ANY'
         });
     }

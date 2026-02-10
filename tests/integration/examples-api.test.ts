@@ -16,40 +16,13 @@ import { parseNaturalLanguageToQueryBuilderGroup } from '~/lib/parser/nl-query-p
 import { queryBuilderGroupToSearchQuery } from '~/lib/utils/search-query';
 import { buildCombinedPayload } from '~/lib/api/client';
 import { SEARCH_EXAMPLES } from '~/lib/utils/search-examples';
-import { defaultScopeForField } from '~/lib/utils/query-builder-config';
-import type { QueryBuilderGroup, SearchQuery } from '~/lib/types';
+import { TEXT_EXAMPLES, BUILDER_EXAMPLES } from '~/lib/utils/curated-examples';
+import type { QueryBuilderGroup } from '~/lib/types';
 
 const API_BASE = process.env.TEST_API_BASE || 'http://localhost:3000';
 const TIMEOUT = 30_000;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-function genId(): string {
-    return Math.random().toString(36).slice(2, 10);
-}
-
-function makeRule(
-    field: string,
-    value: string,
-    operator = 'contains',
-    scope?: 'ANY' | 'ECHR' | 'RS'
-) {
-    return {
-        id: genId(),
-        field,
-        operator,
-        value,
-        sourceScope: scope ?? defaultScopeForField(field),
-    };
-}
-
-function makeGroup(
-    operator: 'AND' | 'OR' | 'NOT',
-    rules: ReturnType<typeof makeRule>[],
-    groups: QueryBuilderGroup[] = []
-): QueryBuilderGroup {
-    return { id: genId(), operator, rules, groups };
-}
 
 /**
  * Parse a text search string → QueryBuilderGroup → SearchQuery → API payload,
@@ -90,170 +63,14 @@ async function executeGroupQuery(group: QueryBuilderGroup) {
     return { response, data, query, group, body };
 }
 
-// ─── Text examples (from pages/examples.vue) ───────────────────────────────
+// ─── Curated examples (single source of truth: lib/utils/curated-examples.ts)
 
-const textExamples: Array<{ text: string; title: string }> = [
-    { text: 'Article 3 violated Turkey between 2014 and 2016', title: 'Article + date range' },
-    { text: 'ECHR respondent state Armenia importance 1', title: 'Source + importance' },
-    { text: 'Rechtspraak "intellectual property" 2020', title: 'Rechtspraak topical search' },
-    { text: 'ECLI:NL:HR:2019:1234', title: 'Direct ECLI lookup' },
-    { text: 'Cases in Germany in 2010 with Article 6 violated', title: 'Country + article + year' },
-    { text: 'Rechtspraak Bestuursrecht 2015 instance Raad van State', title: 'Domain + instance' },
-    { text: 'ECHR Article 8 non-violated "privacy" 2021', title: 'Non-violation signal' },
-    { text: 'Cases with ECLI ECLI:NL:RBAMS and "privacy"', title: 'ECLI prefix' },
-    { text: 'ECHR "fair trial" AND "freedom of expression" 2018', title: 'Boolean + multi-topic' },
-    { text: 'Rechtspraak "tax law" between 2012 and 2014', title: 'Year range (RS)' },
-    { text: 'ECHR "right to life" Germany 2010', title: 'Keyword + state' },
-    { text: 'Rechtspraak "asylum seeker" 2019', title: 'Keyword only' },
-    { text: 'ECHR "inhuman treatment" Turkey between 2014 and 2016', title: 'Keyword + range' },
-    { text: 'Rechtspraak "contract breach" AND "damages" 2018', title: 'Boolean keyword' },
-    { text: 'ECHR Article 6 violated "fair trial" 2016', title: 'Article + keyword' },
-    { text: 'Rechtspraak "freedom of information" 2021', title: 'Public law keyword' },
-    { text: 'ECHR "family life" AND "privacy" 2020', title: 'Multiple keywords' },
-    { text: 'Rechtspraak "eminent domain" 2017', title: 'Property keyword' },
-    { text: 'ECHR "freedom of expression" 2019', title: 'Single keyword' },
-    { text: 'Rechtspraak "child custody" 2013', title: 'Family law keyword' },
-    { text: 'ECHR language ENG judgment date on 2020-05-01', title: 'Language + judgment date' },
-    { text: 'ECHR decision date before 2019-06-01 respondent state France', title: 'Decision date bound' },
-    { text: 'Rechtspraak selected law BWBX1234|56 2020', title: 'Selected law' },
-    { text: 'Rechtspraak articles "BWBR0001830" 2018', title: 'Rechtspraak articles' },
-    { text: 'title "freedom of expression" date start 2019-01-01 date end 2019-12-31', title: 'Title + exact date range' },
-];
+const textExamples = TEXT_EXAMPLES
+    .filter((e) => e.searchText)
+    .map((e) => ({ text: e.searchText!, title: e.title }));
 
-// ─── Builder examples (from pages/examples.vue) ────────────────────────────
-
-const builderExamples: Array<{ title: string; group: QueryBuilderGroup }> = [
-    {
-        title: 'ECHR Article Violations',
-        group: makeGroup('AND', [
-            makeRule('article_violated', '3', 'equals', 'ECHR'),
-            makeRule('respondent_state', 'Turkey', 'equals', 'ECHR'),
-            makeRule('year', '2014', 'after', 'ANY'),
-        ]),
-    },
-    {
-        title: 'Rechtspraak domains',
-        group: makeGroup(
-            'AND',
-            [makeRule('instance', 'Hoge Raad', 'equals', 'RS')],
-            [
-                makeGroup('OR', [
-                    makeRule('domain', 'Intellectueel-eigendomsrecht', 'equals', 'RS'),
-                    makeRule('domain', 'Civiel recht', 'equals', 'RS'),
-                ]),
-            ]
-        ),
-    },
-    {
-        title: 'Mixed source query',
-        group: makeGroup('AND', [
-            makeRule('title', 'privacy', 'contains', 'ANY'),
-            makeRule('ecli', 'ECLI:NL:HR', 'contains', 'ANY'),
-        ]),
-    },
-    {
-        title: 'Mixed: ECHR article + RS domain',
-        group: makeGroup('OR', [], [
-            makeGroup('AND', [
-                makeRule('article_violated', '5', 'equals', 'ECHR'),
-                makeRule('year', '2018', 'after', 'ANY'),
-            ]),
-            makeGroup('AND', [
-                makeRule('domain', 'Bestuursrecht', 'equals', 'RS'),
-                makeRule('year', '2018', 'after', 'ANY'),
-            ]),
-        ]),
-    },
-    {
-        title: 'Mixed: respondent state + instance',
-        group: makeGroup('OR', [], [
-            makeGroup('AND', [
-                makeRule('respondent_state', 'Italy', 'equals', 'ECHR'),
-                makeRule('year', '2016', 'equals', 'ANY'),
-            ]),
-            makeGroup('AND', [
-                makeRule('instance', 'Raad van State', 'equals', 'RS'),
-                makeRule('year', '2016', 'equals', 'ANY'),
-            ]),
-        ]),
-    },
-    {
-        title: 'Mixed: OR grouping by dataset',
-        group: makeGroup('OR', [], [
-            makeGroup('AND', [
-                makeRule('article_applied', '8', 'equals', 'ECHR'),
-                makeRule('year', '2012', 'after', 'ANY'),
-            ]),
-            makeGroup('AND', [
-                makeRule('domain', 'Belastingrecht', 'equals', 'RS'),
-                makeRule('year', '2012', 'after', 'ANY'),
-            ]),
-        ]),
-    },
-    {
-        title: 'Mixed: text + dataset filters',
-        group: makeGroup('OR', [], [
-            makeGroup('AND', [
-                makeRule('text', 'privacy', 'contains', 'ANY'),
-                makeRule('article_non_violated', '8', 'equals', 'ECHR'),
-            ]),
-            makeGroup('AND', [
-                makeRule('text', 'privacy', 'contains', 'ANY'),
-                makeRule('instance', 'Hoge Raad', 'equals', 'RS'),
-            ]),
-        ]),
-    },
-    {
-        title: 'ECHR application numbers',
-        group: makeGroup('AND', [
-            makeRule('application_number', '23459/03', 'equals', 'ECHR'),
-            makeRule('respondent_state', 'Germany', 'equals', 'ECHR'),
-        ]),
-    },
-    {
-        title: 'Rechtspraak opinion type',
-        group: makeGroup('AND', [
-            makeRule('document_type', 'OPI', 'equals', 'RS'),
-            makeRule('domain', 'Belastingrecht', 'equals', 'RS'),
-        ]),
-    },
-    {
-        title: 'NOT grouping',
-        group: makeGroup(
-            'AND',
-            [makeRule('year', '2019', 'equals', 'ANY')],
-            [makeGroup('NOT', [makeRule('domain', 'Personen- en familierecht', 'equals', 'RS')])]
-        ),
-    },
-    {
-        title: 'ECHR language + judgment date',
-        group: makeGroup('AND', [
-            makeRule('language', 'ENG', 'equals', 'ECHR'),
-            makeRule('date_judgment_start', '2020-05-01', 'equals', 'ECHR'),
-        ]),
-    },
-    {
-        title: 'ECHR decision date range',
-        group: makeGroup('AND', [
-            makeRule('date_decision_start', '2019-01-01', 'after', 'ECHR'),
-            makeRule('date_decision_end', '2019-12-31', 'before', 'ECHR'),
-        ]),
-    },
-    {
-        title: 'Rechtspraak selected laws + articles',
-        group: makeGroup('AND', [
-            makeRule('selectedLaws', 'BWBX1234|56', 'equals', 'RS'),
-            makeRule('articles', 'BWBR0001830', 'contains', 'RS'),
-        ]),
-    },
-    {
-        title: 'Exact date bounds',
-        group: makeGroup('AND', [
-            makeRule('dateStart', '2020-02-01', 'equals', 'ANY'),
-            makeRule('dateEnd', '2020-03-15', 'equals', 'ANY'),
-        ]),
-    },
-];
+const builderExamples = BUILDER_EXAMPLES
+    .map((e) => ({ title: e.title, group: e.group }));
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -268,6 +85,7 @@ describe.sequential('Text examples → parse → API', () => {
                 expect(data.error).toBeUndefined();
                 expect(data.nodes).toBeDefined();
                 expect(Array.isArray(data.nodes)).toBe(true);
+                expect(data.nodes.length, `"${example.text}" returned 0 results`).toBeGreaterThan(0);
                 console.log(`[text] done: ${example.title}`);
             },
             TIMEOUT
@@ -286,6 +104,7 @@ describe.sequential('Builder examples → API', () => {
                 expect(data.error).toBeUndefined();
                 expect(data.nodes).toBeDefined();
                 expect(Array.isArray(data.nodes)).toBe(true);
+                expect(data.nodes.length, `[${example.title}] returned 0 results`).toBeGreaterThan(0);
                 console.log(`[builder] done: ${example.title}`);
             },
             TIMEOUT
@@ -327,6 +146,7 @@ describe.sequential('Suggested searches (SEARCH_EXAMPLES) → parse → API', ()
                 expect(data.error).toBeUndefined();
                 expect(data.nodes).toBeDefined();
                 expect(Array.isArray(data.nodes)).toBe(true);
+                expect(data.nodes.length, `"${text}" returned 0 results`).toBeGreaterThan(0);
                 console.log(`[suggested] done: ${i + 1}/${SEARCH_EXAMPLES.length}`);
             },
             TIMEOUT
