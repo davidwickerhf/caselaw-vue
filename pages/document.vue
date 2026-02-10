@@ -6,6 +6,7 @@ import {
 	onMounted,
 	onBeforeUnmount,
 	nextTick,
+	defineAsyncComponent,
 } from "vue";
 import {
 	ExternalLink,
@@ -44,6 +45,9 @@ import {
 } from "lucide-vue-next";
 import AppHeader from "~/components/shared/AppHeader.vue";
 import AppFooter from "~/components/shared/AppFooter.vue";
+const CitationGraph = defineAsyncComponent(() =>
+	import("~/components/shared/CitationGraph.vue"),
+);
 import {
 	useUserData,
 	type Highlight,
@@ -1060,6 +1064,13 @@ const outlineItems = computed<OutlineItem[]>(() => {
 		}
 	}
 
+	if (hasCitesSection.value || hasCitedBySection.value) {
+		items.push({
+			sectionId: "section-citation-graph",
+			text: "Citations Graph",
+			isSection: true,
+		});
+	}
 	if (hasCitesSection.value) {
 		items.push({
 			sectionId: "section-cited",
@@ -1987,7 +1998,7 @@ useHead({
 					<div class="flex flex-col gap-8 xl:flex-row xl:gap-0 xl:h-full" data-doc-columns>
 					<!-- ═══ Left column: main content ═══ -->
 					<div class="flex-1 min-w-0 xl:overflow-y-auto xl:py-8 xl:pb-16 doc-column-scroll">
-					<div class="max-w-4xl mx-auto space-y-8">
+					<div class="doc-left-col-inner space-y-8">
 						<!-- Shared annotations warning banner -->
 						<Transition name="search-bar">
 							<div
@@ -2250,7 +2261,7 @@ useHead({
 							</div>
 						</section>
 
-						<div class="h-px bg-border" />
+						<div class="doc-divider h-px bg-border" />
 
 						<!-- Summary / headnote -->
 						<section v-if="inlineTextContent" id="section-summary">
@@ -2264,7 +2275,7 @@ useHead({
 							</p>
 						</section>
 
-						<div v-if="inlineTextContent" class="h-px bg-border" />
+						<div v-if="inlineTextContent" class="doc-divider h-px bg-border" />
 
 						<!-- Metadata grid -->
 						<section id="section-metadata">
@@ -2436,7 +2447,7 @@ useHead({
 							</div>
 						</section>
 
-						<div class="h-px bg-border" />
+						<div class="doc-divider h-px bg-border" />
 
 						<!-- Full text -->
 						<section id="section-fulltext">
@@ -2903,6 +2914,37 @@ useHead({
 					>
 						<div class="space-y-6">
 
+						<!-- Citations Graph -->
+						<section
+							v-if="hasCitesSection || hasCitedBySection"
+							id="section-citation-graph"
+							class="scroll-mt-36 xl:scroll-mt-4"
+						>
+							<div class="flex items-center gap-2 mb-3">
+								<div
+									class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
+								>
+									Citations Graph
+								</div>
+								<Badge variant="secondary" class="text-[10px] h-4 px-1.5">{{
+									citesCount + citedByCount
+								}}</Badge>
+							</div>
+							<ClientOnly>
+								<CitationGraph
+									v-if="citation"
+									:root-ecli="ecli"
+									:root-citation="citation"
+									:cites-eclis="citesEclis"
+									:cited-by-eclis="citedByEclis"
+									:cited-docs="citedDocs"
+									@navigate="(e: string) => router.push({ path: '/document', query: { ecli: e } })"
+								/>
+							</ClientOnly>
+						</section>
+
+						<div v-if="hasCitesSection || hasCitedBySection" class="h-px bg-border xl:-ml-6 xl:-mr-10" />
+
 						<!-- Cited Documents -->
 						<section v-if="hasCitesSection" id="section-cited">
 							<button
@@ -2967,7 +3009,7 @@ useHead({
 							</div>
 						</section>
 
-						<div v-if="hasCitesSection" class="h-px bg-border" />
+						<div v-if="hasCitesSection" class="h-px bg-border xl:-ml-6 xl:-mr-10" />
 
 						<!-- Cited By -->
 						<section v-if="hasCitedBySection" id="section-citedby">
@@ -3083,6 +3125,13 @@ useHead({
 }
 .doc-column-scroll::-webkit-scrollbar-thumb:hover {
 	background-color: hsl(var(--border));
+}
+
+/* ── Left column: constrain all children except dividers to max-w-4xl ── */
+.doc-left-col-inner > :not(.doc-divider) {
+	max-width: 56rem; /* 4xl */
+	margin-left: auto;
+	margin-right: auto;
 }
 
 /* ── Search bar transition ── */

@@ -76,9 +76,15 @@ function toggleMode() {
 				<button
 					class="group flex h-full w-12 shrink-0 items-center justify-center px-0 text-sm font-semibold text-muted-foreground transition-all duration-200 ease-out hover:text-foreground hover:bg-muted/40 active:scale-[0.98]"
 					@click="toggleMode"
+					aria-label="Toggle theme"
 				>
-					<Sun v-if="isDark" class="h-4 w-4 transition-transform group-hover:scale-105" />
-					<Moon v-else class="h-4 w-4 transition-transform group-hover:scale-105" />
+					<ClientOnly>
+						<Sun v-if="isDark" class="h-4 w-4 transition-transform group-hover:scale-105" />
+						<Moon v-else class="h-4 w-4 transition-transform group-hover:scale-105" />
+						<template #fallback>
+							<Sun class="h-4 w-4" />
+						</template>
+					</ClientOnly>
 				</button>
 			</div>
 		</div>
