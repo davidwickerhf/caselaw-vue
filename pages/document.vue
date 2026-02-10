@@ -39,6 +39,8 @@ import {
 	Pencil,
 	FolderInput,
 	Folder,
+	Share2,
+	AlertTriangle,
 } from "lucide-vue-next";
 import AppHeader from "~/components/shared/AppHeader.vue";
 import AppFooter from "~/components/shared/AppFooter.vue";
@@ -59,6 +61,12 @@ import {
 	detectSourceFromEcli,
 	type EchrLanguageEntry,
 } from "~/lib/api/client";
+import {
+	encodeAnnotations,
+	decodeAnnotations,
+	hasAnnotations,
+	type SharedAnnotations,
+} from "~/lib/utils/share-annotations";
 
 const route = useRoute();
 const router = useRouter();
@@ -70,6 +78,14 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const copied = ref(false);
 const linkCopied = ref(false);
+const shareCopied = ref(false);
+
+// ── Shared annotations (from URL) ──
+const sharedAnnotations = ref<SharedAnnotations | null>(null);
+/** 'active' = showing banner + overlaying, 'saved' = user saved them, 'cleared' = user dismissed */
+const sharedAnnotationState = ref<'active' | 'saved' | 'cleared' | 'ignored'>('active');
+/** How many annotations were actually saved (after dedup) */
+const sharedSavedCount = ref(0);
 
 // Citation data
 const citedDocs = ref<Citation[]>([]);
@@ -245,18 +261,61 @@ const annotationLanguageCode = computed(() =>
 );
 
 // Computed for current document (scoped by language for ECHR)
-const docHighlights = computed(() =>
+const ownHighlights = computed(() =>
 	ecli.value ? userData.getHighlightsForDoc(ecli.value, annotationLanguageCode.value) : [],
 );
-const docComments = computed(() =>
+const ownComments = computed(() =>
 	ecli.value ? userData.getCommentsForDoc(ecli.value, annotationLanguageCode.value) : [],
 );
+
+// Synthesise full Highlight / DocComment objects from shared payload so the
+// rendering pipeline can treat them identically to user-owned annotations.
+const sharedHighlightsFull = computed<Highlight[]>(() => {
+	const sa = sharedAnnotations.value;
+	if (!sa || (sharedAnnotationState.value !== 'active' && sharedAnnotationState.value !== 'ignored')) return [];
+	return sa.highlights.map((h, i) => ({
+		id: `__shared_hl_${i}`,
+		ecli: ecli.value,
+		startLine: h.startLine,
+		startOffset: h.startOffset,
+		endLine: h.endLine,
+		endOffset: h.endOffset,
+		text: h.text,
+		color: h.color,
+		languageCode: h.languageCode,
+		createdAt: 0,
+	}));
+});
+const sharedCommentsFull = computed<DocComment[]>(() => {
+	const sa = sharedAnnotations.value;
+	if (!sa || (sharedAnnotationState.value !== 'active' && sharedAnnotationState.value !== 'ignored')) return [];
+	return sa.comments.map((c, i) => ({
+		id: `__shared_cm_${i}`,
+		ecli: ecli.value,
+		text: c.text,
+		startLine: c.startLine,
+		endLine: c.endLine,
+		languageCode: c.languageCode,
+		createdAt: 0,
+		updatedAt: 0,
+	}));
+});
+
+// Merged annotations (own + shared overlay)
+const docHighlights = computed(() => [...ownHighlights.value, ...sharedHighlightsFull.value]);
+const docComments = computed(() => [...ownComments.value, ...sharedCommentsFull.value]);
+
 const docLevelComments = computed(() =>
 	docComments.value.filter((c) => c.startLine === undefined),
 );
 const lineComments = computed(() =>
 	docComments.value.filter((c) => c.startLine !== undefined),
 );
+
+// Helper: is this annotation from the shared URL?
+function isSharedAnnotation(id: string): boolean {
+	return id.startsWith('__shared_');
+}
 
 // Map: lineNumber -> highlights covering that line
 const lineHighlightsMap = computed(() => {
@@ -358,6 +417,8 @@ function handleTextMouseUp(event: MouseEvent) {
 			hl.endOffset === endOffset,
 	);
 	if (matchingHl) {
+		// Don't allow editing shared highlights
+		if (isSharedAnnotation(matchingHl.id)) return;
 		// Show edit toolbar instead of creation toolbar
 		const rect = range.getBoundingClientRect();
 		highlightEditToolbar.value = {
@@ -406,6 +467,8 @@ function showHighlightEditToolbar(mark: HTMLElement) {
 	const markOffset = getMarkStartOffset(mark, cell);
 	const hl = findHighlightAtPosition(lineNum, markOffset);
 	if (!hl) return;
+	// Don't allow editing shared highlights
+	if (isSharedAnnotation(hl.id)) return;
 
 	const rect = mark.getBoundingClientRect();
 	highlightEditToolbar.value = {
@@ -519,19 +582,21 @@ function createHighlight(color: HighlightColor) {
 
 function changeHighlightColor(color: HighlightColor) {
 	if (!highlightEditToolbar.value.highlightId) return;
+	if (isSharedAnnotation(highlightEditToolbar.value.highlightId)) return;
 	userData.updateHighlightColor(highlightEditToolbar.value.highlightId, color);
 	highlightEditToolbar.value.currentColor = color;
 }
 
 function removeHighlightFromToolbar() {
 	if (!highlightEditToolbar.value.highlightId) return;
+	if (isSharedAnnotation(highlightEditToolbar.value.highlightId)) return;
 	userData.removeHighlight(highlightEditToolbar.value.highlightId);
 	highlightEditToolbar.value.visible = false;
 }
 
 function removeLineHighlight(lineNumber: number) {
 	const highlights = lineHighlightsMap.value.get(lineNumber);
-	if (highlights && highlights.length > 0)
+	if (highlights && highlights.length > 0 && !isSharedAnnotation(highlights[0].id))
 		userData.removeHighlight(highlights[0].id);
 }
 
@@ -1220,6 +1285,94 @@ function copyDocumentLink() {
 	setTimeout(() => (linkCopied.value = false), 2000);
 }
 
+function shareWithAnnotations() {
+	if (typeof window === "undefined" || !ecli.value) return;
+	const allHighlights = ownHighlights.value;
+	const allComments = ownComments.value;
+	if (!hasAnnotations(allHighlights, allComments)) {
+		// No annotations — just copy the plain link
+		copyDocumentLink();
+		return;
+	}
+	const encoded = encodeAnnotations(allHighlights, allComments);
+	const url = new URL(window.location.href);
+	url.searchParams.set("shared", encoded);
+	navigator.clipboard.writeText(url.toString());
+	shareCopied.value = true;
+	setTimeout(() => (shareCopied.value = false), 2000);
+}
+
+// ── Shared annotations: import actions ──
+function saveSharedAnnotations() {
+	const sa = sharedAnnotations.value;
+	if (!sa || !ecli.value) return;
+
+	const existing = ownHighlights.value;
+	const existingComments = ownComments.value;
+	let savedCount = 0;
+
+	for (const h of sa.highlights) {
+		// Deduplicate: skip if an identical highlight already exists at the same position
+		const duplicate = existing.some(
+			(e) =>
+				e.startLine === h.startLine &&
+				e.startOffset === h.startOffset &&
+				e.endLine === h.endLine &&
+				e.endOffset === h.endOffset &&
+				e.text === h.text &&
+				(!h.languageCode || e.languageCode === h.languageCode),
+		);
+		if (!duplicate) {
+			userData.addHighlight(
+				ecli.value,
+				h.startLine,
+				h.startOffset,
+				h.endLine,
+				h.endOffset,
+				h.text,
+				h.color,
+				h.languageCode,
+			);
+			savedCount++;
+		}
+	}
+	for (const c of sa.comments) {
+		// Deduplicate: skip if a comment with the same text and anchor already exists
+		const duplicate = existingComments.some(
+			(e) =>
+				e.text === c.text &&
+				e.startLine === c.startLine &&
+				e.endLine === c.endLine &&
+				(!c.languageCode || e.languageCode === c.languageCode),
+		);
+		if (!duplicate) {
+			userData.addComment(ecli.value, c.text, c.startLine, c.endLine, c.languageCode);
+			savedCount++;
+		}
+	}
+
+	sharedAnnotationState.value = 'saved';
+	sharedSavedCount.value = savedCount;
+	// Remove the shared param from URL
+	clearSharedUrlParam();
+}
+
+function clearSharedAnnotations() {
+	sharedAnnotationState.value = 'cleared';
+	clearSharedUrlParam();
+}
+
+function ignoreSharedAnnotations() {
+	sharedAnnotationState.value = 'ignored';
+}
+
+function clearSharedUrlParam() {
+	if (typeof window === "undefined") return;
+	const url = new URL(window.location.href);
+	url.searchParams.delete("shared");
+	router.replace({ query: { ...route.query, shared: undefined } });
+}
+
 function toggleSave() {
 	if (!citation.value) return;
 	userData.toggleSaveDocument(citation.value);
@@ -1401,6 +1554,15 @@ onMounted(() => {
 	if (typeof from === "string" && from.startsWith("/")) {
 		referrerPath.value = from;
 	}
+	// Detect shared annotations in URL
+	const sharedParam = route.query.shared;
+	if (typeof sharedParam === "string" && sharedParam.length > 0) {
+		const decoded = decodeAnnotations(sharedParam);
+		if (decoded && (decoded.highlights.length > 0 || decoded.comments.length > 0)) {
+			sharedAnnotations.value = decoded;
+			sharedAnnotationState.value = 'active';
+		}
+	}
 	loadDocument(ecli.value);
 	document.addEventListener("keydown", handleKeydown);
 });
@@ -1437,6 +1599,19 @@ watch(ecli, (newEcli) => {
 	commentInputVisible.value = false;
 	expandedCommentLines.value = new Set();
 	editingCommentId.value = null;
+	// Reset shared annotations
+	sharedAnnotations.value = null;
+	sharedAnnotationState.value = 'active';
+
+	// Check for shared annotations in new URL
+	const sharedParam = route.query.shared;
+	if (typeof sharedParam === "string" && sharedParam.length > 0) {
+		const decoded = decodeAnnotations(sharedParam);
+		if (decoded && (decoded.highlights.length > 0 || decoded.comments.length > 0)) {
+			sharedAnnotations.value = decoded;
+			sharedAnnotationState.value = 'active';
+		}
+	}
 
 	loadDocument(newEcli);
 });
@@ -1678,6 +1853,16 @@ useHead({
 											<Link class="h-3.5 w-3.5" v-else />
 										</button>
 									</Tooltip>
+									<Tooltip text="Share with annotations">
+										<button
+											class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:text-foreground hover:bg-muted/50"
+											@click="shareWithAnnotations"
+											aria-label="Share with annotations"
+										>
+											<Check v-if="shareCopied" class="h-3.5 w-3.5 text-emerald-500" />
+											<Share2 class="h-3.5 w-3.5" v-else />
+										</button>
+									</Tooltip>
 									<div class="w-px h-4 bg-border/50 mx-0.5" />
 									<Tooltip :text="isSaved ? 'Unsave document' : 'Save document'">
 										<button
@@ -1803,6 +1988,82 @@ useHead({
 					<!-- ═══ Left column: main content ═══ -->
 					<div class="flex-1 min-w-0 xl:overflow-y-auto xl:py-8 xl:pb-16 doc-column-scroll">
 					<div class="max-w-4xl mx-auto space-y-8">
+						<!-- Shared annotations warning banner -->
+						<Transition name="search-bar">
+							<div
+								v-if="sharedAnnotations && sharedAnnotationState === 'active'"
+								class="rounded-lg border border-orange-300/60 dark:border-orange-500/30 bg-orange-50/80 dark:bg-orange-950/30 px-4 py-3"
+							>
+								<div class="flex items-start gap-3">
+									<AlertTriangle class="h-4 w-4 text-orange-500 dark:text-orange-400 shrink-0 mt-0.5" />
+									<div class="flex-1 min-w-0">
+										<p class="text-xs font-medium text-orange-800 dark:text-orange-300 leading-relaxed">
+											This link contains shared annotations from another user
+										</p>
+										<p class="text-[11px] text-orange-600/80 dark:text-orange-400/60 mt-0.5 leading-relaxed">
+											{{ sharedAnnotations.highlights.length }} highlight{{ sharedAnnotations.highlights.length !== 1 ? 's' : '' }},
+											{{ sharedAnnotations.comments.length }} comment{{ sharedAnnotations.comments.length !== 1 ? 's' : '' }}
+											are overlaid on this document.
+										</p>
+										<div class="flex items-center gap-2 mt-2.5">
+											<button
+												class="rounded-md bg-orange-600 dark:bg-orange-500 px-3 py-1 text-[11px] font-medium text-white hover:bg-orange-700 dark:hover:bg-orange-600 transition-colors"
+												@click="saveSharedAnnotations"
+											>
+												Save to my annotations
+											</button>
+											<button
+												class="rounded-md border border-orange-300/60 dark:border-orange-500/30 px-3 py-1 text-[11px] font-medium text-orange-700 dark:text-orange-300 hover:bg-orange-100/60 dark:hover:bg-orange-900/30 transition-colors"
+												@click="clearSharedAnnotations"
+											>
+												Clear
+											</button>
+											<button
+												class="px-2 py-1 text-[11px] text-orange-500/70 dark:text-orange-400/50 hover:text-orange-700 dark:hover:text-orange-300 transition-colors"
+												@click="ignoreSharedAnnotations"
+											>
+												Ignore
+											</button>
+										</div>
+									</div>
+									<button
+										class="shrink-0 text-orange-400/60 hover:text-orange-600 dark:hover:text-orange-300 transition-colors"
+										@click="clearSharedAnnotations"
+										aria-label="Dismiss"
+									>
+										<X class="h-3.5 w-3.5" />
+									</button>
+								</div>
+							</div>
+						</Transition>
+
+						<!-- Saved confirmation -->
+						<Transition name="search-bar">
+							<div
+								v-if="sharedAnnotationState === 'saved'"
+								class="rounded-lg border border-emerald-300/60 dark:border-emerald-500/30 bg-emerald-50/80 dark:bg-emerald-950/30 px-4 py-3"
+							>
+								<div class="flex items-center gap-3">
+									<Check class="h-4 w-4 text-emerald-500 shrink-0" />
+									<p class="text-xs font-medium text-emerald-700 dark:text-emerald-300 flex-1">
+										<template v-if="sharedSavedCount > 0">
+											{{ sharedSavedCount }} annotation{{ sharedSavedCount !== 1 ? 's' : '' }} saved to your library.
+										</template>
+										<template v-else>
+											All shared annotations already exist in your library. Nothing new to save.
+										</template>
+									</p>
+									<button
+										class="shrink-0 text-emerald-400/60 hover:text-emerald-600 dark:hover:text-emerald-300 transition-colors"
+										@click="sharedAnnotationState = 'cleared'"
+										aria-label="Dismiss"
+									>
+										<X class="h-3.5 w-3.5" />
+									</button>
+								</div>
+							</div>
+						</Transition>
+
 						<!-- Document-wide comments (above summary) -->
 						<section id="section-comments" class="scroll-mt-36 xl:scroll-mt-4">
 							<div class="flex items-center gap-2 mb-3">
@@ -1825,9 +2086,14 @@ useHead({
 								<div
 									v-for="c in docLevelComments"
 									:key="c.id"
-									class="rounded-lg border border-border/40 bg-background/80 px-4 py-3"
+									:class="[
+										'rounded-lg border px-4 py-3',
+										isSharedAnnotation(c.id)
+											? 'border-orange-300/40 dark:border-orange-500/20 bg-orange-50/40 dark:bg-orange-950/20'
+											: 'border-border/40 bg-background/80',
+									]"
 								>
-									<template v-if="editingCommentId === c.id">
+									<template v-if="editingCommentId === c.id && !isSharedAnnotation(c.id)">
 										<textarea
 											v-model="editingCommentText"
 											class="w-full rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-foreground outline-none resize-none focus:border-primary/40"
@@ -1859,29 +2125,34 @@ useHead({
 										<div
 											class="flex items-center gap-2 mt-2 pt-2 border-t border-border/30"
 										>
-											<span class="text-[10px] text-muted-foreground/40">{{
+											<span v-if="isSharedAnnotation(c.id)" class="inline-flex items-center gap-1 text-[9px] font-medium text-orange-600 dark:text-orange-400 bg-orange-100/60 dark:bg-orange-900/30 rounded px-1.5 py-0.5">
+												<Share2 class="h-2.5 w-2.5" /> Shared
+											</span>
+											<span v-else class="text-[10px] text-muted-foreground/40">{{
 												formatCommentTime(c.createdAt)
 											}}</span>
 											<span
-												v-if="c.updatedAt !== c.createdAt"
+												v-if="!isSharedAnnotation(c.id) && c.updatedAt !== c.createdAt"
 												class="text-[10px] text-muted-foreground/30 italic"
 												>edited</span
 											>
 											<div class="flex-1" />
-											<button
-												class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/30 hover:text-foreground hover:bg-muted/50 transition-colors"
-												@click="startEditComment(c)"
-												title="Edit"
-											>
-												<Pencil class="h-3 w-3" />
-											</button>
-											<button
-												class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
-												@click="deleteComment(c.id)"
-												title="Delete"
-											>
-												<Trash2 class="h-3 w-3" />
-											</button>
+											<template v-if="!isSharedAnnotation(c.id)">
+												<button
+													class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/30 hover:text-foreground hover:bg-muted/50 transition-colors"
+													@click="startEditComment(c)"
+													title="Edit"
+												>
+													<Pencil class="h-3 w-3" />
+												</button>
+												<button
+													class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
+													@click="deleteComment(c.id)"
+													title="Delete"
+												>
+													<Trash2 class="h-3 w-3" />
+												</button>
+											</template>
 										</div>
 									</template>
 								</div>
@@ -1956,7 +2227,10 @@ useHead({
 										"
 									>
 										<MessageSquare
-											class="h-3 w-3 text-muted-foreground/40 shrink-0"
+											:class="[
+												'h-3 w-3 shrink-0',
+												isSharedAnnotation(c.id) ? 'text-orange-400' : 'text-muted-foreground/40',
+											]"
 										/>
 										<span
 											class="text-muted-foreground/40 text-[10px] shrink-0 tabular-nums"
@@ -1970,6 +2244,7 @@ useHead({
 										<span class="truncate text-foreground/60">{{
 											c.text
 										}}</span>
+										<span v-if="isSharedAnnotation(c.id)" class="inline-flex items-center text-[8px] font-medium text-orange-500 dark:text-orange-400 shrink-0">shared</span>
 									</button>
 								</div>
 							</div>
@@ -2365,9 +2640,14 @@ useHead({
 																	line.lineNumber,
 																)"
 																:key="c.id"
-																class="rounded-md border border-border/50 bg-background/80 px-3 py-2"
+																:class="[
+																	'rounded-md border px-3 py-2',
+																	isSharedAnnotation(c.id)
+																		? 'border-orange-300/40 dark:border-orange-500/20 bg-orange-50/40 dark:bg-orange-950/20'
+																		: 'border-border/50 bg-background/80',
+																]"
 															>
-																<template v-if="editingCommentId === c.id">
+																<template v-if="editingCommentId === c.id && !isSharedAnnotation(c.id)">
 																	<textarea
 																		v-model="editingCommentText"
 																		class="w-full rounded border border-border/60 bg-muted/20 px-2 py-1.5 text-xs text-foreground outline-none resize-none focus:border-primary/40"
@@ -2397,7 +2677,10 @@ useHead({
 																		{{ c.text }}
 																	</p>
 																	<div class="flex items-center gap-2 mt-1.5">
-																		<span
+																		<span v-if="isSharedAnnotation(c.id)" class="inline-flex items-center gap-0.5 text-[9px] font-medium text-orange-600 dark:text-orange-400 bg-orange-100/60 dark:bg-orange-900/30 rounded px-1 py-0.5">
+																			<Share2 class="h-2 w-2" /> Shared
+																		</span>
+																		<span v-else
 																			class="text-[10px] text-muted-foreground/40"
 																			>{{
 																				formatCommentTime(c.createdAt)
@@ -2411,20 +2694,22 @@ useHead({
 																			>L{{ c.startLine }}–{{ c.endLine }}</span
 																		>
 																		<div class="flex-1" />
-																		<button
-																			class="text-muted-foreground/30 hover:text-foreground transition-colors"
-																			@click="startEditComment(c)"
-																			title="Edit"
-																		>
-																			<Pencil class="h-2.5 w-2.5" />
-																		</button>
-																		<button
-																			class="text-muted-foreground/30 hover:text-destructive transition-colors"
-																			@click="deleteComment(c.id)"
-																			title="Delete"
-																		>
-																			<Trash2 class="h-2.5 w-2.5" />
-																		</button>
+																		<template v-if="!isSharedAnnotation(c.id)">
+																			<button
+																				class="text-muted-foreground/30 hover:text-foreground transition-colors"
+																				@click="startEditComment(c)"
+																				title="Edit"
+																			>
+																				<Pencil class="h-2.5 w-2.5" />
+																			</button>
+																			<button
+																				class="text-muted-foreground/30 hover:text-destructive transition-colors"
+																				@click="deleteComment(c.id)"
+																				title="Delete"
+																			>
+																				<Trash2 class="h-2.5 w-2.5" />
+																			</button>
+																		</template>
 																	</div>
 																</template>
 															</div>
