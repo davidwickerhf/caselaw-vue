@@ -30,6 +30,8 @@ export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'orange'
 export type Highlight = {
   id: string
   ecli: string
+  /** For ECHR documents: language code (e.g. "ENG", "FRE") to scope the highlight to a specific language version */
+  languageCode?: string
   startLine: number
   startOffset: number    // character offset within startLine
   endLine: number
@@ -42,6 +44,8 @@ export type Highlight = {
 export type DocComment = {
   id: string
   ecli: string
+  /** For ECHR documents: language code (e.g. "ENG", "FRE") to scope inline comments to a specific language version */
+  languageCode?: string
   text: string
   // If undefined => document-level comment; if set => anchored to lines
   startLine?: number
@@ -265,10 +269,12 @@ function addHighlight(
   endLine: number, endOffset: number,
   text: string,
   color: HighlightColor,
+  languageCode?: string,
 ): Highlight {
   const hl: Highlight = {
     id: crypto.randomUUID(),
     ecli,
+    languageCode,
     startLine,
     startOffset,
     endLine,
@@ -280,7 +286,7 @@ function addHighlight(
   highlights.value = [hl, ...highlights.value]
   persistHighlights()
   const truncated = text.length > 40 ? text.slice(0, 40) + '…' : text
-  logActivity('add_highlight', `Highlighted "${truncated}"`, { ecli, color })
+  logActivity('add_highlight', `Highlighted "${truncated}"`, { ecli, color, ...(languageCode ? { languageCode } : {}) })
   return hl
 }
 
@@ -302,15 +308,27 @@ function updateHighlightColor(id: string, color: HighlightColor) {
   persistHighlights()
 }
 
-function getHighlightsForDoc(ecli: string): Highlight[] {
-  return highlights.value.filter(h => h.ecli === ecli)
+/**
+ * Get highlights for a document. For ECHR documents, pass languageCode to only
+ * return highlights for that language version. Inline highlights (with line numbers)
+ * are filtered by language; document-level highlights (if any) are always returned.
+ */
+function getHighlightsForDoc(ecli: string, languageCode?: string): Highlight[] {
+  return highlights.value.filter(h => {
+    if (h.ecli !== ecli) return false
+    // If a languageCode filter is provided, only show highlights matching that language
+    // (or highlights that were saved without a languageCode for backwards compat)
+    if (languageCode && h.languageCode && h.languageCode !== languageCode) return false
+    return true
+  })
 }
 
 // ── Comments ──
-function addComment(ecli: string, text: string, startLine?: number, endLine?: number): DocComment {
+function addComment(ecli: string, text: string, startLine?: number, endLine?: number, languageCode?: string): DocComment {
   const comment: DocComment = {
     id: crypto.randomUUID(),
     ecli,
+    languageCode: startLine !== undefined ? languageCode : undefined, // only scope inline comments to a language
     text,
     startLine,
     endLine,
@@ -320,7 +338,7 @@ function addComment(ecli: string, text: string, startLine?: number, endLine?: nu
   comments.value = [comment, ...comments.value]
   persistComments()
   const lineInfo = startLine ? ` on L${startLine}${endLine && endLine !== startLine ? `–${endLine}` : ''}` : ''
-  logActivity('add_comment', `Comment${lineInfo}`, { ecli })
+  logActivity('add_comment', `Comment${lineInfo}`, { ecli, ...(languageCode && startLine !== undefined ? { languageCode } : {}) })
   return comment
 }
 
@@ -342,8 +360,19 @@ function removeComment(id: string) {
   }
 }
 
-function getCommentsForDoc(ecli: string): DocComment[] {
-  return comments.value.filter(c => c.ecli === ecli)
+/**
+ * Get comments for a document. For ECHR documents, pass languageCode to filter
+ * inline comments by language. Document-level comments (no startLine) are always returned.
+ */
+function getCommentsForDoc(ecli: string, languageCode?: string): DocComment[] {
+  return comments.value.filter(c => {
+    if (c.ecli !== ecli) return false
+    // Document-level comments (no line anchor) are always shown regardless of language
+    if (c.startLine === undefined) return true
+    // For line-anchored comments, filter by language if provided
+    if (languageCode && c.languageCode && c.languageCode !== languageCode) return false
+    return true
+  })
 }
 
 function getAllAnnotations(): (Highlight | DocComment)[] {

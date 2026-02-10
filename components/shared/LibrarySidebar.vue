@@ -124,6 +124,43 @@ function handleRemoveFromFolder(ecli: string, folderId: string) { userData.remov
 
 const uncategorizedDocs = computed(() => userData.getUncategorizedDocs());
 
+// ── Drag-and-drop ──
+const draggedEcli = ref<string | null>(null);
+const dropTargetFolderId = ref<string | null>(null);
+
+function onDragStart(event: DragEvent, ecli: string) {
+	draggedEcli.value = ecli;
+	if (event.dataTransfer) {
+		event.dataTransfer.effectAllowed = "move";
+		event.dataTransfer.setData("text/plain", ecli);
+	}
+}
+
+function onDragEnd() {
+	draggedEcli.value = null;
+	dropTargetFolderId.value = null;
+}
+
+function onFolderDragOver(event: DragEvent, folderId: string) {
+	event.preventDefault();
+	if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+	dropTargetFolderId.value = folderId;
+}
+
+function onFolderDragLeave(folderId: string) {
+	if (dropTargetFolderId.value === folderId) dropTargetFolderId.value = null;
+}
+
+function onFolderDrop(event: DragEvent, folderId: string) {
+	event.preventDefault();
+	const ecli = draggedEcli.value || event.dataTransfer?.getData("text/plain");
+	if (ecli) {
+		userData.addDocumentToFolder(ecli, folderId);
+	}
+	draggedEcli.value = null;
+	dropTargetFolderId.value = null;
+}
+
 // ── Saved-tab sub-sections ──
 type SavedSection = "folders" | "bookmarks" | "annotations";
 const expandedSavedSections = ref<Set<SavedSection>>(new Set(["folders", "bookmarks", "annotations"]));
@@ -146,6 +183,11 @@ function annotationTitle(ann: Highlight | DocComment): string {
 		return ann.text.length > 50 ? ann.text.slice(0, 50) + '…' : ann.text;
 	}
 	return ann.text.length > 50 ? ann.text.slice(0, 50) + '…' : ann.text;
+}
+
+function annotationLangLabel(ann: Highlight | DocComment): string | null {
+	const code = 'languageCode' in ann ? ann.languageCode : undefined;
+	return code || null;
 }
 
 function annotationLineLabel(ann: Highlight | DocComment): string {
@@ -229,17 +271,25 @@ function activityIconFor(type: ActivityEntry["type"]) {
 						class="flex w-full items-center gap-1.5 px-4 py-2 text-left hover:bg-muted/30 transition-colors"
 						@click="toggleSavedSection('folders')"
 					>
-						<ChevronDown :class="['h-3 w-3 text-muted-foreground/40 transition-transform duration-150 shrink-0', expandedSavedSections.has('folders') ? '' : '-rotate-90']" />
 						<Folder class="h-3 w-3 text-muted-foreground/50 shrink-0" />
 						<span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 flex-1">Folders</span>
 						<span class="text-[10px] tabular-nums text-muted-foreground/35">{{ userData.foldersCount.value }}</span>
+						<ChevronDown :class="['h-3 w-3 text-muted-foreground/40 transition-transform duration-150 shrink-0 ml-1', expandedSavedSections.has('folders') ? '' : '-rotate-90']" />
 					</button>
 
 					<div v-if="expandedSavedSections.has('folders')">
 						<!-- Folders list -->
 						<div v-if="userData.folders.value.length > 0" class="px-2 space-y-px">
 							<div v-for="folder in userData.folders.value" :key="folder.id">
-								<div class="group flex items-center gap-1 rounded-lg px-2 py-1.5 hover:bg-muted/40 transition-colors">
+								<div
+								:class="[
+									'group flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors',
+									dropTargetFolderId === folder.id ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/40',
+								]"
+								@dragover="onFolderDragOver($event, folder.id)"
+								@dragleave="onFolderDragLeave(folder.id)"
+								@drop="onFolderDrop($event, folder.id)"
+							>
 									<button class="flex items-center gap-1.5 flex-1 min-w-0 text-left" @click="toggleFolder(folder.id)">
 										<ChevronRight
 											:class="['h-3 w-3 text-muted-foreground/40 transition-transform duration-150 shrink-0', expandedFolders.has(folder.id) ? 'rotate-90' : '']"
@@ -341,10 +391,10 @@ function activityIconFor(type: ActivityEntry["type"]) {
 						class="flex w-full items-center gap-1.5 px-4 py-2 text-left hover:bg-muted/30 transition-colors"
 						@click="toggleSavedSection('bookmarks')"
 					>
-						<ChevronDown :class="['h-3 w-3 text-muted-foreground/40 transition-transform duration-150 shrink-0', expandedSavedSections.has('bookmarks') ? '' : '-rotate-90']" />
 						<Bookmark class="h-3 w-3 text-muted-foreground/50 shrink-0" />
 						<span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 flex-1">Bookmarks</span>
 						<span class="text-[10px] tabular-nums text-muted-foreground/35">{{ uncategorizedDocs.length }}</span>
+						<ChevronDown :class="['h-3 w-3 text-muted-foreground/40 transition-transform duration-150 shrink-0 ml-1', expandedSavedSections.has('bookmarks') ? '' : '-rotate-90']" />
 					</button>
 
 					<div v-if="expandedSavedSections.has('bookmarks')">
@@ -352,7 +402,13 @@ function activityIconFor(type: ActivityEntry["type"]) {
 							<div
 								v-for="doc in uncategorizedDocs"
 								:key="doc.ecli"
-								class="group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/40"
+								:class="[
+									'group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/40 cursor-grab active:cursor-grabbing',
+									draggedEcli === doc.ecli ? 'opacity-50' : '',
+								]"
+								draggable="true"
+								@dragstart="onDragStart($event, doc.ecli)"
+								@dragend="onDragEnd"
 							>
 								<button class="flex items-center gap-2 flex-1 min-w-0 text-left" @click="handleOpenDocument(doc.ecli)">
 									<Badge :variant="doc.source === 'HUDOC' ? 'default' : 'secondary'" class="text-[8px] h-3.5 px-1 shrink-0">{{ sourceBadge(doc.source) }}</Badge>
@@ -405,10 +461,10 @@ function activityIconFor(type: ActivityEntry["type"]) {
 						class="flex w-full items-center gap-1.5 px-4 py-2 text-left hover:bg-muted/30 transition-colors"
 						@click="toggleSavedSection('annotations')"
 					>
-						<ChevronDown :class="['h-3 w-3 text-muted-foreground/40 transition-transform duration-150 shrink-0', expandedSavedSections.has('annotations') ? '' : '-rotate-90']" />
 						<Highlighter class="h-3 w-3 text-muted-foreground/50 shrink-0" />
 						<span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 flex-1">Annotations</span>
 						<span class="text-[10px] tabular-nums text-muted-foreground/35">{{ userData.annotationsCount.value }}</span>
+						<ChevronDown :class="['h-3 w-3 text-muted-foreground/40 transition-transform duration-150 shrink-0 ml-1', expandedSavedSections.has('annotations') ? '' : '-rotate-90']" />
 					</button>
 
 					<div v-if="expandedSavedSections.has('annotations')">
@@ -432,6 +488,7 @@ function activityIconFor(type: ActivityEntry["type"]) {
 										<span class="text-[9px] tabular-nums text-muted-foreground/40 shrink-0">{{ annotationLineLabel(ann) }}</span>
 										<span v-if="isHighlight(ann)" class="text-[10px] text-muted-foreground/30">highlight</span>
 										<span v-else class="text-[10px] text-muted-foreground/30">comment</span>
+										<span v-if="annotationLangLabel(ann)" class="text-[9px] text-muted-foreground/30 font-mono uppercase">{{ annotationLangLabel(ann) }}</span>
 									</div>
 									<span class="block truncate text-[11px] text-foreground/70 mt-0.5 leading-snug">"{{ annotationTitle(ann) }}"</span>
 									<div class="flex items-center gap-1.5 mt-0.5">
