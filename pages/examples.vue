@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { ExternalLink, Play, Copy, Link2, Sparkles } from 'lucide-vue-next'
+import { ExternalLink, Play, Copy, Link2, Sparkles, Loader2 } from 'lucide-vue-next'
 import AppHeader from '~/components/shared/AppHeader.vue'
 import AppFooter from '~/components/shared/AppFooter.vue'
 import Button from '~/components/ui/button/Button.vue'
@@ -8,6 +8,8 @@ import QueryBuilderStandalone from '~/components/search/QueryBuilderStandalone.v
 import QueryPreview from '~/components/search/QueryPreview.vue'
 import QueryJsonPanel from '~/components/examples/QueryJsonPanel.vue'
 import { queryBuilderGroupToParams } from '~/lib/utils/query-builder-url'
+import { queryBuilderGroupToSearchQuery } from '~/lib/utils/search-query'
+import { fetchCombinedPage } from '~/lib/api/client'
 import { parseNaturalLanguageToQueryBuilderGroup } from '~/lib/parser/nl-query-parser'
 import { useSearch } from '~/composables/useSearch'
 import { compressSearchParams } from '~/lib/utils/compressed-url'
@@ -24,6 +26,10 @@ const builderExamples = reactive<ExampleItem[]>([...BUILDER_EXAMPLES])
 const filterScope = ref<'ALL' | 'ECHR' | 'RS' | 'MIXED'>('ALL')
 const filterText = ref('')
 const expandedTextId = ref<string | null>(null)
+
+const tryLoading = reactive(new Map<string, boolean>())
+const tryResults = reactive(new Map<string, { total: number; echrTotal: number; rsTotal: number }>())
+const tryErrors = reactive(new Map<string, string>())
 
 const scopeCounts = computed(() => {
   const all = [...textExamples, ...builderExamples]
@@ -73,6 +79,31 @@ function testQuery(example: ExampleItem) {
 function openInNewTab(example: ExampleItem) {
   if (typeof window === 'undefined') return
   window.open(buildResultsUrl(example), '_blank', 'noopener')
+}
+
+async function tryQuery(example: ExampleItem) {
+  if (tryLoading.get(example.id)) return
+  tryLoading.set(example.id, true)
+  tryResults.delete(example.id)
+  tryErrors.delete(example.id)
+
+  try {
+    const parsed = queryBuilderGroupToSearchQuery(example.group)
+    if (!parsed.query) {
+      tryErrors.set(example.id, parsed.error || 'Invalid query')
+      return
+    }
+    const result = await fetchCombinedPage(parsed.query, example.group, 1)
+    tryResults.set(example.id, {
+      total: result.total ?? 0,
+      echrTotal: result.echrTotal ?? 0,
+      rsTotal: result.rsTotal ?? 0,
+    })
+  } catch (err: unknown) {
+    tryErrors.set(example.id, err instanceof Error ? err.message : 'Request failed')
+  } finally {
+    tryLoading.set(example.id, false)
+  }
 }
 
 function toggleExpanded(id: string) {
@@ -255,9 +286,10 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                         <Button variant="ghost" size="sm" class="h-8 rounded-lg" @click="toggleExpanded(example.id)">
                           {{ expandedTextId === example.id ? 'Hide builder' : 'View builder' }}
                         </Button>
-                        <Button variant="default" size="sm" class="h-8 gap-2 rounded-lg px-4" @click="testQuery(example)">
-                          <Play class="h-3 w-3" />
-                          Test query
+                        <Button variant="default" size="sm" class="h-8 gap-2 rounded-lg px-4" :disabled="tryLoading.get(example.id)" @click="tryQuery(example)">
+                          <Loader2 v-if="tryLoading.get(example.id)" class="h-3 w-3 animate-spin" />
+                          <Play v-else class="h-3 w-3" />
+                          {{ tryLoading.get(example.id) ? 'Loading...' : 'Try example' }}
                         </Button>
                         <Button variant="outline" size="sm" class="h-8 gap-2 rounded-lg px-4" @click="openInNewTab(example)">
                           <ExternalLink class="h-3 w-3" />
@@ -282,6 +314,19 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                           <Link2 class="h-3 w-3" />
                         </Button>
                       </div>
+                    </div>
+
+                    <div v-if="tryResults.has(example.id)" class="rounded-lg border border-border/50 bg-card/60 px-4 py-2 text-xs text-muted-foreground flex items-center gap-3">
+                      <span class="font-semibold text-foreground">{{ tryResults.get(example.id)!.total }} results</span>
+                      <span>ECHR: {{ tryResults.get(example.id)!.echrTotal }}</span>
+                      <span>RS: {{ tryResults.get(example.id)!.rsTotal }}</span>
+                      <Button variant="default" size="sm" class="h-6 ml-auto gap-1.5 rounded-lg px-3 text-[11px]" @click="testQuery(example)">
+                        <ExternalLink class="h-3 w-3" />
+                        View results
+                      </Button>
+                    </div>
+                    <div v-else-if="tryErrors.has(example.id)" class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+                      {{ tryErrors.get(example.id) }}
                     </div>
                   </div>
 
@@ -342,9 +387,10 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                   />
 
                   <div class="mt-4 flex flex-wrap gap-2">
-                    <Button variant="default" size="sm" class="h-8 gap-2 rounded-lg px-4" @click="testQuery(example)">
-                      <Play class="h-3.5 w-3.5" />
-                      Test query
+                    <Button variant="default" size="sm" class="h-8 gap-2 rounded-lg px-4" :disabled="tryLoading.get(example.id)" @click="tryQuery(example)">
+                      <Loader2 v-if="tryLoading.get(example.id)" class="h-3.5 w-3.5 animate-spin" />
+                      <Play v-else class="h-3.5 w-3.5" />
+                      {{ tryLoading.get(example.id) ? 'Loading...' : 'Try example' }}
                     </Button>
                     <Button variant="outline" size="sm" class="h-8 gap-2 rounded-lg px-4" @click="openInNewTab(example)">
                       <ExternalLink class="h-3.5 w-3.5" />
@@ -359,6 +405,19 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                     >
                       <Link2 class="h-3.5 w-3.5" />
                     </Button>
+                  </div>
+
+                  <div v-if="tryResults.has(example.id)" class="rounded-lg border border-border/50 bg-card/60 px-4 py-2 text-xs text-muted-foreground flex items-center gap-3">
+                    <span class="font-semibold text-foreground">{{ tryResults.get(example.id)!.total }} results</span>
+                    <span>ECHR: {{ tryResults.get(example.id)!.echrTotal }}</span>
+                    <span>RS: {{ tryResults.get(example.id)!.rsTotal }}</span>
+                    <Button variant="default" size="sm" class="h-6 ml-auto gap-1.5 rounded-lg px-3 text-[11px]" @click="testQuery(example)">
+                      <ExternalLink class="h-3 w-3" />
+                      View results
+                    </Button>
+                  </div>
+                  <div v-else-if="tryErrors.has(example.id)" class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+                    {{ tryErrors.get(example.id) }}
                   </div>
                 </article>
               </div>

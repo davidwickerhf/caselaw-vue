@@ -1033,7 +1033,8 @@ function applyQueryAndSearch(
 				path: "/results",
 				query: Object.fromEntries(compressed.entries()),
 			})
-			.finally(() => {
+			.finally(async () => {
+				await nextTick();
 				syncingRoute.value = false;
 			});
 	}
@@ -1100,7 +1101,8 @@ function handleClear() {
 	filterState.value = {};
 	lastAppliedSignature.value = "";
 	syncingRoute.value = true;
-	router.replace({ path: "/results" }).finally(() => {
+	router.replace({ path: "/results" }).finally(async () => {
+		await nextTick();
 		syncingRoute.value = false;
 	});
 }
@@ -1398,7 +1400,8 @@ function syncDocParam(ecli?: string) {
 		delete query.doc;
 	}
 	syncingRoute.value = true;
-	router.replace({ path: "/results", query }).finally(() => {
+	router.replace({ path: "/results", query }).finally(async () => {
+		await nextTick();
 		syncingRoute.value = false;
 	});
 }
