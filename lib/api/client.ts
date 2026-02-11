@@ -41,7 +41,7 @@ type CombinedResponse = {
 };
 
 const RS_DOC_TYPES = new Set(['DEC', 'OPI']);
-const ECHR_DOC_TYPES = new Set(['HEJUD', 'HEDEC', 'HECOM', 'HEINF', 'HECJUD', 'HECDEC', 'HECCOM', 'HECINF']);
+const ECHR_DOC_TYPES = new Set(['JUD', 'DEC', 'COM', 'CLIN', 'PR', 'OTHER']);
 const COMMON_FIELDS = new Set(['text', 'title', 'ecli', 'keywords', 'year', 'dateStart', 'dateEnd', 'source']);
 const DOMAIN_SET = new Set(RECHTSPRAAK_DOMAINS.map((d) => d.toLowerCase()));
 const DOMAIN_ALIAS_MAP = new Map(
@@ -104,6 +104,11 @@ function normalizeImportanceValue(value: string): string | null {
 function normalizeDocumentType(value: string, scope: SourceScope): { value: string; scope: SourceScope } | null {
     const upper = value.trim().toUpperCase();
     if (!upper) return null;
+    // DEC is shared between RS and ECHR — keep as-is and let scope determine
+    if (upper === 'DEC') {
+        if (scope === 'RS' || scope === 'ECHR') return { value: upper, scope };
+        return { value: upper, scope: 'ANY' };
+    }
     if (scope === 'ANY') {
         if (RS_DOC_TYPES.has(upper)) return { value: upper, scope: 'RS' };
         if (ECHR_DOC_TYPES.has(upper)) return { value: upper, scope: 'ECHR' };
@@ -155,6 +160,12 @@ function normalizeRuleValue(field: string, value: string, scope: SourceScope): {
         }
         case 'document_type': {
             return normalizeDocumentType(sanitizeFilterValue(trimmed), scope);
+        }
+        case 'echr_document_type': {
+            return normalizeDocumentType(sanitizeFilterValue(trimmed), 'ECHR');
+        }
+        case 'rs_document_type': {
+            return normalizeDocumentType(sanitizeFilterValue(trimmed), 'RS');
         }
         case 'source': {
             const src = normalizeSourceValue(trimmed);
@@ -275,8 +286,8 @@ function transformEchrNode(node: ApiNode): Citation {
         url_publication: (d.url_publication as string) || `https://hudoc.echr.coe.int/eng?i=${d.itemid || ''}`,
         source: 'HUDOC',
         itemid: d.itemid as string | undefined,
-        language: d.language as string | undefined,
-        languages: d.languages as Record<string, string> | undefined,
+        languages: Array.isArray(d.languages) ? d.languages as string[] : [],
+        originating_body: (d.originating_body as string) || undefined,
         respondent_state: respondentState,
         application_number: d.application_number as string | undefined,
         article_violated: (d.article_violated as string[]) || undefined,
@@ -322,6 +333,7 @@ function transformNetworkNode(node: ApiNode): Citation {
         procedure_type: (d.procedure_type as string) || '',
         url_publication: (d.url_publication as string) || '',
         source: 'Rechtspraak',
+        languages: Array.isArray(d.languages) ? d.languages as string[] : ['NLD'],
         legal_provisions: (d.legal_provisions as string[]) || undefined,
         predecessor_successor_cases: d.predecessor_successor_cases as string | undefined,
         ecli_decision: d.ecli_decision as string | undefined,

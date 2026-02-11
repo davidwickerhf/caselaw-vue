@@ -261,14 +261,12 @@ const STATE_CODE_MAP = new Map(
 	Object.entries(RESPONDENT_STATE_CODES).map(([name, code]) => [code.toUpperCase(), name]),
 );
 const DOC_TYPES_ECHR = new Set([
-	"HEJUD",
-	"HEDEC",
-	"HECOM",
-	"HEINF",
-	"HECJUD",
-	"HECDEC",
-	"HECCOM",
-	"HECINF",
+	"JUD",
+	"DEC",
+	"COM",
+	"CLIN",
+	"PR",
+	"OTHER",
 ]);
 const DOC_TYPES_RS = new Set(["DEC", "OPI"]);
 const ISO3_RE = /^[A-Z]{3}$/;
@@ -289,9 +287,13 @@ const FILTER_KEYS: (keyof SearchQuery)[] = [
 	"articleNonViolated",
 	"respondentState",
 	"documentType",
+	"echrDocumentType",
+	"rsDocumentType",
 	"importance",
 	"instances",
 	"domains",
+	"language",
+	"originatingBody",
 	"dateStart",
 	"dateEnd",
 ];
@@ -319,6 +321,8 @@ function extractFilterState(query: SearchQuery): Partial<SearchQuery> {
 	if (query.importance.length) next.importance = [...query.importance];
 	if (query.instances.length) next.instances = [...query.instances];
 	if (query.domains.length) next.domains = [...query.domains];
+	if (query.language.length) next.language = [...query.language];
+	if (query.originatingBody.length) next.originatingBody = [...query.originatingBody];
 	if (query.dateStart) next.dateStart = query.dateStart;
 	if (query.dateEnd) next.dateEnd = query.dateEnd;
 	return next;
@@ -411,9 +415,13 @@ function appendFilterParams(
 	);
 	setList("respondentState", filters.respondentState as string[] | undefined);
 	setList("documentType", filters.documentType as string[] | undefined);
+	setList("echrDocumentType", filters.echrDocumentType as string[] | undefined);
+	setList("rsDocumentType", filters.rsDocumentType as string[] | undefined);
 	setList("instances", filters.instances as string[] | undefined);
 	setList("domains", filters.domains as string[] | undefined);
 	setList("importance", filters.importance as number[] | undefined);
+	setList("language", filters.language as string[] | undefined);
+	setList("originatingBody", filters.originatingBody as string[] | undefined);
 	if (filters.dateStart) params.set("dateStart", filters.dateStart);
 	if (filters.dateEnd) params.set("dateEnd", filters.dateEnd);
 }

@@ -115,13 +115,17 @@ export function computeFacets(cases: Citation[]): SearchFacets {
 		articlesNonViolated: facetMap((c) => c.article_non_violated),
 		respondentStates: facetMap((c) => c.respondent_state),
 		documentTypes: facetMap((c) => c.document_type),
+		echrDocumentTypes: facetMap((c) => c.source === 'HUDOC' ? c.document_type : undefined),
+		rsDocumentTypes: facetMap((c) => c.source === 'Rechtspraak' ? c.document_type : undefined),
 		importance: facetMap((c) => c.importance),
 		instances: facetMap((c) => (c.instance ? c.instance : undefined)),
 		domains: facetMap((c) => {
 			if (c.domains && c.domains.length > 0) return c.domains;
 			if (c.domain) return c.domain;
 			return undefined;
-		})
+		}),
+		originatingBodies: facetMap((c) => c.originating_body),
+		languages: facetMap((c) => c.languages.length > 0 ? c.languages : undefined),
 	};
 }
 
@@ -148,13 +152,28 @@ export function mapServerFacets(
 		articlesApplied: toFacetItems(raw.echr_article_applied),
 		articlesNonViolated: toFacetItems(raw.echr_article_non_violated),
 		respondentStates: toFacetItems(raw.echr_respondent_state),
-		documentTypes: [
-			...toFacetItems(raw.rs_document_type),
-			...toFacetItems(raw.echr_document_type),
-		],
+		documentTypes: (() => {
+			const map = new Map<string, number>();
+			const add = (items: Array<{ value: string | number; count: number }> | undefined) => {
+				if (!items) return;
+				for (const item of items) {
+					const val = String(item.value);
+					map.set(val, (map.get(val) || 0) + item.count);
+				}
+			};
+			add(raw.rs_document_type);
+			add(raw.echr_document_type);
+			return Array.from(map.entries())
+				.map(([value, count]) => ({ value, count }))
+				.sort((a, b) => b.count - a.count);
+		})(),
+		echrDocumentTypes: toFacetItems(raw.echr_document_type),
+		rsDocumentTypes: toFacetItems(raw.rs_document_type),
 		importance: toFacetItems(raw.echr_importance),
 		instances: toFacetItems(raw.rs_instance),
 		domains: toFacetItems(raw.rs_domain),
+		originatingBodies: toFacetItems(raw.echr_originating_body),
+		languages: toFacetItems(raw.echr_language),
 	};
 }
 
@@ -235,7 +254,7 @@ export async function executeSearch(
 	const effectiveGroup = (serverGroup.rules.length === 0 && serverGroup.groups.length === 0)
 		? {
 			...serverGroup,
-			rules: [{ id: 'source-any', field: 'source', operator: 'equals', value: 'ANY', sourceScope: 'ANY' }],
+			rules: [{ id: 'source-any', field: 'source', operator: 'equals', value: 'ANY', sourceScope: 'ANY' as const }],
 			groups: []
 		}
 		: serverGroup;
@@ -250,7 +269,7 @@ export async function executeSearch(
 	if (!hasRules(group)) {
 		onUpdate(buildSearchResult([], query, { total: 0, totalIsExact: true, facets: computeFacets([]) }));
 		cleanup();
-		return () => {};
+		return () => { };
 	}
 
 	const initialCursor = clientFiltering ? undefined : query.cursor;
@@ -259,7 +278,7 @@ export async function executeSearch(
 		const result = await fetchCombinedPage(query, effectiveGroup, pageSize, initialCursor, signal);
 		if (cancelled) {
 			cleanup();
-			return () => {};
+			return () => { };
 		}
 		if (!clientFiltering && query.page > 1 && seed) {
 			onUpdate(

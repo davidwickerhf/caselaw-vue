@@ -58,13 +58,13 @@ describe('recognizers', () => {
     const result = recognizeMetadata('Grand chamber judgment importance 2');
     const types = result.suggestions.filter((s) => s.token.type === 'document_type').map((s) => s.token.value);
     const importance = result.suggestions.find((s) => s.token.type === 'importance');
-    expect(types).toContain('HECJUD');
+    expect(types).toContain('JUD');
     expect(importance?.token.value).toBe('2');
 
     const nl = recognizeMetadata('grote kamer arrest belangrijke zaak');
     const nlTypes = nl.suggestions.filter((s) => s.token.type === 'document_type').map((s) => s.token.value);
     const nlImportance = nl.suggestions.find((s) => s.token.type === 'importance');
-    expect(nlTypes).toContain('HECJUD');
+    expect(nlTypes).toContain('JUD');
     expect(nlImportance?.token.value).toBe('2');
   });
 

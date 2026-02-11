@@ -16,12 +16,12 @@ export type Citation = {
     source: 'HUDOC' | 'Rechtspraak';
     // ECHR-specific fields
     itemid?: string;
-    language?: string;
+    languages: string[];
+    originating_body?: string;
     date_judgment?: string;
     date_decision?: string;
     respondent_state?: string;
     application_number?: string;
-    languages?: Record<string, string>;
     article_violated?: string[];
     article_applied?: string[];
     article_non_violated?: string[];
@@ -46,8 +46,15 @@ export enum DataSource {
 }
 
 export enum DocType {
+    // RS
     OPI = 'OPI',
-    DEC = 'DEC'
+    DEC = 'DEC',
+    // ECHR
+    JUD = 'JUD',
+    COM = 'COM',
+    CLIN = 'CLIN',
+    PR = 'PR',
+    OTHER = 'OTHER'
 }
 
 export type SourceScope = 'ANY' | 'ECHR' | 'RS';
@@ -70,6 +77,7 @@ export type EchrSearchFilters = CommonSearchFilters & {
     documentType: string[];
     importance: number[];
     language: string[];
+    originatingBody: string[];
     dateJudgmentStart?: string;
     dateJudgmentEnd?: string;
     dateDecisionStart?: string;
@@ -104,8 +112,11 @@ export type SearchQuery = {
     respondentState: string[];
     applicationNumbers: string[];
     documentType: string[];
+    echrDocumentType?: string[];
+    rsDocumentType?: string[];
     importance: number[];
     language: string[];
+    originatingBody: string[];
     instances: string[];
     domains: string[];
     articles: string[];
@@ -146,9 +157,13 @@ export type SearchFacets = {
     articlesNonViolated: FacetItem[];
     respondentStates: FacetItem[];
     documentTypes: FacetItem[];
+    echrDocumentTypes: FacetItem[];
+    rsDocumentTypes: FacetItem[];
     importance: FacetItem[];
     instances: FacetItem[];
     domains: FacetItem[];
+    originatingBodies: FacetItem[];
+    languages: FacetItem[];
 };
 
 export type FacetItem = {
@@ -197,6 +212,8 @@ export type ParsedTokenType =
     | 'date_decision_end'
     | 'date_decision_exact'
     | 'document_type'
+    | 'echr_document_type'
+    | 'rs_document_type'
     | 'importance'
     | 'instance'
     | 'domain'
@@ -276,6 +293,7 @@ export function createDefaultSearchQuery(): SearchQuery {
         documentType: [],
         importance: [],
         language: [],
+        originatingBody: [],
         instances: [],
         domains: [],
         articles: [],
@@ -302,6 +320,7 @@ export function createDefaultSearchQuery(): SearchQuery {
                 documentType: [],
                 importance: [],
                 language: [],
+                originatingBody: [],
                 dateJudgmentStart: undefined,
                 dateJudgmentEnd: undefined,
                 dateDecisionStart: undefined,

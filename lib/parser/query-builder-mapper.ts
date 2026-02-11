@@ -14,8 +14,12 @@ export function tokenScope(token: ParsedToken): SourceScope {
         case 'importance':
         case 'document_type': {
             const value = String(token.value || '').toUpperCase();
-            if (value === 'DEC' || value === 'OPI') return 'RS';
-            if (value.startsWith('HE')) return 'ECHR';
+            if (value === 'OPI') return 'RS';
+            // DEC is shared between RS and ECHR — keep as ANY
+            if (value === 'DEC') return 'ANY';
+            // ECHR-only codes
+            const ECHR_ONLY_TYPES = new Set(['JUD', 'COM', 'CLIN', 'PR', 'OTHER']);
+            if (ECHR_ONLY_TYPES.has(value)) return 'ECHR';
             return 'ANY';
         }
         case 'language':

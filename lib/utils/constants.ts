@@ -295,6 +295,10 @@ export const RESPONDENT_STATE_CODES: Record<string, string> = {
     'United Kingdom': 'GBR'
 };
 
+export const RESPONDENT_STATE_LABELS: Record<string, string> = Object.fromEntries(
+    Object.entries(RESPONDENT_STATE_CODES).map(([label, code]) => [code, label])
+);
+
 export const RESPONDENT_STATES: string[] = Object.keys(RESPONDENT_STATE_CODES);
 
 export const RESPONDENT_STATE_ALIASES: Record<string, string> = {
@@ -445,3 +449,92 @@ export const DOCUMENT_TYPES: string[] = [
     'Advisory opinion',
     'Communicated case'
 ];
+
+export const DOCUMENT_TYPE_LABELS_ECHR: Record<string, string> = {
+    'JUD': 'Judgment',
+    'DEC': 'Decision',
+    'COM': 'Communicated Case',
+    'CLIN': 'Clinical Note',
+    'PR': 'Press Release',
+    'OTHER': 'Other',
+    'CC': 'Communicated Case'
+};
+
+export const DOCUMENT_TYPE_LABELS_RS: Record<string, string> = {
+    'DEC': 'Uitspraak',
+    'OPI': 'Conclusie'
+};
+
+export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+    ...DOCUMENT_TYPE_LABELS_ECHR,
+    ...DOCUMENT_TYPE_LABELS_RS,
+    'DEC': 'Decision / Uitspraak' // Fallback for mixed contexts
+};
+
+export const LANGUAGE_LABELS: Record<string, string> = {
+    'ENG': 'English',
+    'FRA': 'French',
+    'FRE': 'French',
+    'NLD': 'Dutch',
+    'DEU': 'German',
+    'GER': 'German',
+    'ITA': 'Italian',
+    'ESP': 'Spanish',
+    'UNK': 'Unknown',
+    'RUS': 'Russian',
+    'TUR': 'Turkish',
+    'UKR': 'Ukrainian',
+    'RON': 'Romanian',
+    'POL': 'Polish',
+    'SQI': 'Albanian',
+    'ALB': 'Albanian',
+    'HYE': 'Armenian',
+    'ARM': 'Armenian',
+    'AZE': 'Azerbaijani',
+    'BOS': 'Bosnian',
+    'BIH': 'Bosnian',
+    'BUL': 'Bulgarian',
+    'BGR': 'Bulgarian',
+    'HRV': 'Croatian',
+    'CES': 'Czech',
+    'CZE': 'Czech',
+    'DAN': 'Danish',
+    'DNK': 'Danish',
+    'EST': 'Estonian',
+    'FIN': 'Finnish',
+    'KAT': 'Georgian',
+    'GEO': 'Georgian',
+    'ELL': 'Greek',
+    'GRC': 'Greek',
+    'GRE': 'Greek',
+    'HUN': 'Hungarian',
+    'ISL': 'Icelandic',
+    'GLE': 'Irish',
+    'LAV': 'Latvian',
+    'LAT': 'Latvian',
+    'LIT': 'Lithuanian',
+    'LTU': 'Lithuanian',
+    'MKD': 'Macedonian',
+    'MLT': 'Maltese',
+    'CNR': 'Montenegrin',
+    'NOR': 'Norwegian',
+    'POR': 'Portuguese',
+    'PRT': 'Portuguese',
+    'SRP': 'Serbian',
+    'SRB': 'Serbian',
+    'SLK': 'Slovak',
+    'SVK': 'Slovak',
+    'SLV': 'Slovenian',
+    'SVN': 'Slovenian',
+    'SWE': 'Swedish',
+
+};
+
+export const ORIGINATING_BODY_LABELS: Record<string, string> = {
+    'COURT': 'Court (Plenary)',
+    'CHAMBER': 'Chamber',
+    'GRANDCHAMBER': 'Grand Chamber',
+    'COMMITTEE': 'Committee',
+    'COMMISSION': 'Commission',
+    'MINISTRY': 'Ministry'
+};

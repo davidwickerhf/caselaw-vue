@@ -2,7 +2,8 @@
 import { ref, computed } from 'vue'
 import { ChevronDown, ChevronRight, X, Filter, Search, PanelLeftClose } from 'lucide-vue-next'
 import Badge from '~/components/ui/badge/Badge.vue'
-import type { SearchFacets, SearchQuery } from '~/lib/types'
+import type { SearchFacets, SearchQuery, SourceScope } from '~/lib/types'
+import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_LABELS_ECHR, DOCUMENT_TYPE_LABELS_RS, LANGUAGE_LABELS, ORIGINATING_BODY_LABELS, RESPONDENT_STATE_LABELS } from '~/lib/utils/constants'
 
 const props = defineProps<{
   facets: SearchFacets
@@ -19,13 +20,16 @@ const filterSearch = ref('')
 
 const expandedSections = ref<Set<string>>(new Set([
   'sources',
+  'echrDocumentTypes',
+  'rsDocumentTypes',
+  'years',
+  'languages',
+  'importance',
+  'respondentStates',
+  'originatingBodies',
   'articles',
   'articlesApplied',
   'articlesNonViolated',
-  'respondentStates',
-  'documentTypes',
-  'importance',
-  'years',
   'instances',
   'domains'
 ]))
@@ -63,6 +67,12 @@ const activeFilters = computed(() => {
   for (const dt of props.query.documentType) {
     chips.push({ label: dt, onremove: () => emit('change', { documentType: props.query.documentType.filter((d) => d !== dt) }) })
   }
+  for (const dt of props.query.echrDocumentType || []) {
+    chips.push({ label: `ECHR: ${DOCUMENT_TYPE_LABELS_ECHR[dt] || dt}`, onremove: () => emit('change', { echrDocumentType: (props.query.echrDocumentType || []).filter((d) => d !== dt) }) })
+  }
+  for (const dt of props.query.rsDocumentType || []) {
+    chips.push({ label: `RS: ${DOCUMENT_TYPE_LABELS_RS[dt] || dt}`, onremove: () => emit('change', { rsDocumentType: (props.query.rsDocumentType || []).filter((d) => d !== dt) }) })
+  }
   for (const imp of props.query.importance) {
     const labels: Record<number, string> = { 1: 'Key case', 2: 'Important', 3: 'Moderate', 4: 'Low importance' }
     chips.push({ label: labels[imp] || `Imp. ${imp}`, onremove: () => emit('change', { importance: props.query.importance.filter((i) => i !== imp) }) })
@@ -73,6 +83,12 @@ const activeFilters = computed(() => {
   for (const dom of props.query.domains) {
     chips.push({ label: dom, onremove: () => emit('change', { domains: props.query.domains.filter((d) => d !== dom) }) })
   }
+  for (const lang of props.query.language) {
+    chips.push({ label: `Language: ${lang}`, onremove: () => emit('change', { language: props.query.language.filter((l) => l !== lang) }) })
+  }
+  for (const ob of props.query.originatingBody) {
+    chips.push({ label: `Body: ${ob}`, onremove: () => emit('change', { originatingBody: props.query.originatingBody.filter((o) => o !== ob) }) })
+  }
   return chips
 })
 
@@ -81,7 +97,7 @@ const SOURCE_DISPLAY_TO_INTERNAL: Record<string, string> = { 'Rechtspraak': 'RS'
 const SOURCE_INTERNAL_TO_DISPLAY: Record<string, string> = { 'RS': 'Rechtspraak', 'ECHR': 'HUDOC' }
 
 function toggleFacetValue(field: keyof SearchQuery, value: string) {
-  const current = props.query[field] as string[]
+  const current = (props.query[field] as string[] | undefined) || []
   if (field === 'sources') {
     const internal = SOURCE_DISPLAY_TO_INTERNAL[value] || value
     // Source filter: click = "show only this source"; click again = "show all"
@@ -110,7 +126,6 @@ function toggleImportanceFacet(value: number) {
 }
 
 // Source scope for each filter section
-type SourceScope = 'ECHR' | 'RS' | 'all'
 
 type FacetSection = {
   key: string
@@ -125,16 +140,19 @@ type FacetSection = {
 
 const allSections = computed<FacetSection[]>(() =>
   ([
-    { key: 'sources', label: 'Source', source: 'all' as SourceScope, items: props.facets.sources, field: 'sources' as keyof SearchQuery, activeValues: (props.query.sources?.length ?? 0) >= 2 ? [] : (props.query.sources || []).map((s) => SOURCE_INTERNAL_TO_DISPLAY[s] || s) },
-    { key: 'documentTypes', label: 'Document Type', source: 'all' as SourceScope, items: props.facets.documentTypes, field: 'documentType' as keyof SearchQuery, activeValues: props.query.documentType },
+    { key: 'sources', label: 'Source', source: 'ANY' as SourceScope, items: props.facets.sources, field: 'sources' as keyof SearchQuery, activeValues: (props.query.sources?.length ?? 0) >= 2 ? [] : (props.query.sources || []).map((s) => SOURCE_INTERNAL_TO_DISPLAY[s] || s) },
+    { key: 'echrDocumentTypes', label: 'Document Type', source: 'ECHR' as SourceScope, items: props.facets.echrDocumentTypes, field: 'echrDocumentType' as keyof SearchQuery, activeValues: props.query.echrDocumentType || [], formatValue: (v: string) => DOCUMENT_TYPE_LABELS_ECHR[v] || v },
+    { key: 'rsDocumentTypes', label: 'Document Type', source: 'RS' as SourceScope, items: props.facets.rsDocumentTypes, field: 'rsDocumentType' as keyof SearchQuery, activeValues: props.query.rsDocumentType || [], formatValue: (v: string) => DOCUMENT_TYPE_LABELS_RS[v] || v },
+    { key: 'years', label: 'Year', source: 'ANY' as SourceScope, items: props.facets.years.slice(0, 10), field: 'dateStart' as keyof SearchQuery, activeValues: [] },
+    { key: 'languages', label: 'Language', source: 'ECHR' as SourceScope, items: (props.facets.languages ?? []).slice(0, 15), field: 'language' as keyof SearchQuery, activeValues: props.query.language, formatValue: (v: string) => LANGUAGE_LABELS[v] || v },
+    { key: 'importance', label: 'Importance', source: 'ECHR' as SourceScope, items: [...props.facets.importance].sort((a, b) => Number(a.value) - Number(b.value)), field: 'importance' as keyof SearchQuery, activeValues: props.query.importance, isNumeric: true },
+    { key: 'respondentStates', label: 'Respondent State', source: 'ECHR' as SourceScope, items: props.facets.respondentStates.slice(0, 15), field: 'respondentState' as keyof SearchQuery, activeValues: props.query.respondentState, formatValue: (v: string) => RESPONDENT_STATE_LABELS[v] || v },
+    { key: 'originatingBodies', label: 'Originating Body', source: 'ECHR' as SourceScope, items: (props.facets.originatingBodies ?? []).slice(0, 15), field: 'originatingBody' as keyof SearchQuery, activeValues: props.query.originatingBody, formatValue: (v: string) => ORIGINATING_BODY_LABELS[v] || v },
     { key: 'articles', label: 'Articles Violated', source: 'ECHR' as SourceScope, items: props.facets.articles.slice(0, 15), field: 'articleViolated' as keyof SearchQuery, activeValues: props.query.articleViolated, formatValue: (v: string) => `Art. ${v}` },
     { key: 'articlesApplied', label: 'Articles Applied', source: 'ECHR' as SourceScope, items: (props.facets.articlesApplied ?? []).slice(0, 15), field: 'articleApplied' as keyof SearchQuery, activeValues: props.query.articleApplied, formatValue: (v: string) => `Art. ${v}` },
     { key: 'articlesNonViolated', label: 'Articles Not Violated', source: 'ECHR' as SourceScope, items: (props.facets.articlesNonViolated ?? []).slice(0, 15), field: 'articleNonViolated' as keyof SearchQuery, activeValues: props.query.articleNonViolated, formatValue: (v: string) => `Art. ${v}` },
-    { key: 'respondentStates', label: 'Respondent State', source: 'ECHR' as SourceScope, items: props.facets.respondentStates.slice(0, 15), field: 'respondentState' as keyof SearchQuery, activeValues: props.query.respondentState },
-    { key: 'importance', label: 'Importance', source: 'ECHR' as SourceScope, items: [...props.facets.importance].sort((a, b) => Number(a.value) - Number(b.value)), field: 'importance' as keyof SearchQuery, activeValues: props.query.importance, isNumeric: true },
-    { key: 'years', label: 'Year', source: 'all' as SourceScope, items: props.facets.years.slice(0, 10), field: 'dateStart' as keyof SearchQuery, activeValues: [] },
     { key: 'instances', label: 'Court Instance', source: 'RS' as SourceScope, items: props.facets.instances.slice(0, 10), field: 'instances' as keyof SearchQuery, activeValues: props.query.instances },
-    { key: 'domains', label: 'Legal Domain', source: 'RS' as SourceScope, items: props.facets.domains.slice(0, 10), field: 'domains' as keyof SearchQuery, activeValues: props.query.domains }
+    { key: 'domains', label: 'Legal Domain', source: 'RS' as SourceScope, items: props.facets.domains.slice(0, 10), field: 'domains' as keyof SearchQuery, activeValues: props.query.domains },
   ] as FacetSection[]).filter((s) => s.items.length > 0)
 )
 
@@ -259,7 +277,7 @@ function formatItemValue(section: FacetSection, value: string): string {
               {{ section.label }}
             </span>
             <Badge
-              v-if="section.source !== 'all'"
+              v-if="section.source !== 'ANY'"
               :variant="section.source === 'ECHR' ? 'default' : 'secondary'"
               class="text-[9px] h-3.5 px-1 font-medium"
             >

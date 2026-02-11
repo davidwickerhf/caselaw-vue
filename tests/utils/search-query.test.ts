@@ -142,3 +142,42 @@ describe('paramsToSearchQuery – security', () => {
     expect(result.query!.cursor).toContain('abc123');
   });
 });
+
+describe('originatingBody support', () => {
+  it('parses originatingBody from URL params', () => {
+    const params = new URLSearchParams();
+    params.set('originatingBody', 'Court,Commission');
+    params.set('echrOriginatingBody', 'Committee');
+    const result = paramsToSearchQuery(params);
+    expect(result.query!.originatingBody).toContain('Court');
+    expect(result.query!.originatingBody).toContain('Commission');
+    expect(result.query!.scoped.echr.originatingBody).toContain('Committee');
+  });
+
+  it('generates query builder rules for originatingBody', () => {
+    const query = createDefaultSearchQuery();
+    query.originatingBody = ['Court'];
+    const group = searchQueryToQueryBuilderGroup(query);
+    const rule = group.rules.find((r) => r.field === 'originating_body');
+    expect(rule).toBeDefined();
+    expect(rule!.value).toBe('Court');
+    expect(rule!.sourceScope).toBe('ANY');
+  });
+
+  it('parses originatingBody rules back to search query', () => {
+    const group = {
+      id: 'g',
+      operator: 'AND' as const,
+      rules: [
+        { id: '1', field: 'originating_body', operator: 'equals', value: 'Commission', sourceScope: 'ECHR' as const },
+        { id: '2', field: 'originating_body', operator: 'equals', value: 'Court', sourceScope: 'ANY' as const }
+      ],
+      groups: []
+    };
+    const result = queryBuilderGroupToSearchQuery(group);
+    expect(result.query!.scoped.echr.originatingBody).toContain('Commission');
+    expect(result.query!.scoped.echr.originatingBody).toContain('Court');
+    expect(result.query!.originatingBody).toContain('Commission');
+    expect(result.query!.originatingBody).toContain('Court');
+  });
+});

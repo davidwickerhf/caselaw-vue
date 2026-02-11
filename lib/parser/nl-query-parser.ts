@@ -322,18 +322,6 @@ function parsePreviewStringToQueryBuilderGroup(input: string): QueryBuilderGroup
 
 function applyScope(rule: QueryBuilderRule, scope: SourceScope | null): QueryBuilderRule {
     if (!scope) return rule;
-    if (rule.field === 'document_type') {
-        const value = String(rule.value || '').toUpperCase();
-        if (scope === 'ECHR') {
-            if (value === 'DEC') {
-                return { ...rule, value: 'HEDEC', sourceScope: 'ECHR' };
-            }
-            if (value === 'OPI') return rule;
-        }
-        if (scope === 'RS' && value.startsWith('HE')) {
-            return { ...rule, value: 'DEC', sourceScope: 'RS' };
-        }
-    }
     if (isFieldAllowed(scope, rule.field)) return { ...rule, sourceScope: scope };
     return rule;
 }

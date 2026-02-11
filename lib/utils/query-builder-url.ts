@@ -80,7 +80,7 @@ function serializeGroup(group: QueryBuilderGroup): UrlPayload {
 const ALLOWED_FIELDS = new Set([
     'text', 'title', 'ecli', 'keywords', 'year', 'dateStart', 'dateEnd',
     'source', 'article_violated', 'article_applied', 'article_non_violated',
-    'respondent_state', 'application_number', 'document_type', 'importance',
+    'respondent_state', 'application_number', 'document_type', 'echr_document_type', 'rs_document_type', 'importance',
     'language', 'instance', 'domain', 'articles', 'selectedLaws',
     'date_judgment_start', 'date_judgment_end', 'date_decision_start', 'date_decision_end',
 ]);

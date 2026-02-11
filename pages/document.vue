@@ -873,8 +873,14 @@ const metadataItems = computed(() => {
 	if (c.instance)
 		items.push({ label: "Court Instance", value: c.instance, icon: Scale });
 	if (c.domain) items.push({ label: "Domain", value: c.domain, icon: Tag });
-	if (c.language)
-		items.push({ label: "Language", value: c.language, icon: Globe });
+	if (c.languages && c.languages.length > 0)
+		items.push({ label: "Languages", value: c.languages.join(', '), icon: Globe });
+	if (c.originating_body)
+		items.push({
+			label: "Originating Body",
+			value: c.originating_body,
+			icon: Scale,
+		});
 	if (c.application_number)
 		items.push({
 			label: "Application No.",

@@ -20,7 +20,9 @@ export const QUERY_BUILDER_FIELDS_ECHR: QueryBuilderField[] = [
     { value: 'article_non_violated', label: 'Article Non-Violated' },
     { value: 'respondent_state', label: 'Respondent State' },
     { value: 'application_number', label: 'Application Number' },
-    { value: 'document_type', label: 'Document Type' },
+    { value: 'document_type', label: 'Document Type (Legacy)' },
+    { value: 'echr_document_type', label: 'Document Type' },
+    { value: 'originating_body', label: 'Originating Body' },
     { value: 'importance', label: 'Importance' },
     { value: 'language', label: 'Language' },
     { value: 'date_judgment_start', label: 'Judgment Date Start' },
@@ -30,7 +32,8 @@ export const QUERY_BUILDER_FIELDS_ECHR: QueryBuilderField[] = [
 ];
 
 export const QUERY_BUILDER_FIELDS_RS: QueryBuilderField[] = [
-    { value: 'document_type', label: 'Document Type' },
+    { value: 'document_type', label: 'Document Type (Legacy)' },
+    { value: 'rs_document_type', label: 'Document Type' },
     { value: 'instance', label: 'Court Instance' },
     { value: 'domain', label: 'Legal Domain' },
     { value: 'articles', label: 'Articles' },
@@ -98,6 +101,9 @@ export const QUERY_BUILDER_OPERATORS: Record<string, QueryBuilderOperator[]> = {
         { value: 'before', label: 'before' }
     ],
     document_type: [{ value: 'equals', label: 'is' }],
+    echr_document_type: [{ value: 'equals', label: 'is' }],
+    rs_document_type: [{ value: 'equals', label: 'is' }],
+    originating_body: [{ value: 'equals', label: 'is' }],
     instance: [{ value: 'equals', label: 'is' }],
     domain: [{ value: 'equals', label: 'is' }],
     articles: [

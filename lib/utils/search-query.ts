@@ -99,6 +99,12 @@ export function searchQueryToTokens(query: SearchQuery): ParsedToken[] {
 	for (const doc of [...query.documentType, ...scoped.echr.documentType, ...scoped.rs.documentType]) {
 		addToken({ id: genId(), type: 'document_type', value: doc, display: doc });
 	}
+	for (const doc of query.echrDocumentType || []) {
+		addToken({ id: genId(), type: 'echr_document_type', value: doc, display: doc });
+	}
+	for (const doc of query.rsDocumentType || []) {
+		addToken({ id: genId(), type: 'rs_document_type', value: doc, display: doc });
+	}
 	for (const imp of [...query.importance, ...scoped.echr.importance]) {
 		const label = IMPORTANCE_LEVELS.find((i) => i.value === imp)?.label || String(imp);
 		addToken({ id: genId(), type: 'importance', value: String(imp), display: label });
@@ -195,8 +201,11 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 	for (const value of query.respondentState) pushRule('respondent_state', 'equals', value, 'ANY');
 	for (const value of query.applicationNumbers) pushRule('application_number', 'equals', value, 'ANY');
 	for (const value of query.documentType) pushRule('document_type', 'equals', value, 'ANY');
+	for (const value of query.echrDocumentType || []) pushRule('document_type', 'equals', value, 'ECHR');
+	for (const value of query.rsDocumentType || []) pushRule('document_type', 'equals', value, 'RS');
 	for (const value of query.importance) pushRule('importance', 'equals', String(value), 'ANY');
 	for (const value of query.language) pushRule('language', 'equals', value, 'ANY');
+	for (const value of query.originatingBody) pushRule('originating_body', 'equals', value, 'ANY');
 	for (const value of query.instances) pushRule('instance', 'equals', value, 'ANY');
 	for (const value of query.domains) pushRule('domain', 'equals', value, 'ANY');
 	for (const value of query.articles) pushRule('articles', 'contains', value, 'ANY');
@@ -434,11 +443,25 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 			case 'document_type':
 				if (scope === 'RS') {
 					query.scoped.rs.documentType.push(value);
+					if (!query.rsDocumentType) query.rsDocumentType = [];
+					query.rsDocumentType.push(value);
 				} else if (scope === 'ECHR') {
 					query.scoped.echr.documentType.push(value);
+					if (!query.echrDocumentType) query.echrDocumentType = [];
+					query.echrDocumentType.push(value);
 				} else {
 					query.documentType.push(value);
 				}
+				break;
+			case 'echr_document_type':
+				if (!query.echrDocumentType) query.echrDocumentType = [];
+				query.echrDocumentType.push(value);
+				query.scoped.echr.documentType.push(value);
+				break;
+			case 'rs_document_type':
+				if (!query.rsDocumentType) query.rsDocumentType = [];
+				query.rsDocumentType.push(value);
+				query.scoped.rs.documentType.push(value);
 				break;
 			case 'instance':
 				if (scope === 'ECHR') return { error: 'Court Instance is not supported for ECHR.' };
@@ -476,7 +499,14 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 				if (scope === 'RS') return { error: 'Language is not supported for Rechtspraak.' };
 				const code = normalizeIso3(value);
 				if (!code) return { error: 'Language must be ISO-3.' };
-				query.scoped.echr.language.push(code);
+				query.language.push(code);
+				if (scope === 'ECHR') query.scoped.echr.language.push(code);
+				break;
+			}
+			case 'originating_body': {
+				if (scope === 'RS') return { error: 'Originating Body is not supported for Rechtspraak.' };
+				query.originatingBody.push(value);
+				if (scope === 'ECHR') query.scoped.echr.originatingBody.push(value);
 				break;
 			}
 			case 'date_judgment_start': {
@@ -606,6 +636,8 @@ export function searchQueryToParams(query: SearchQuery): URLSearchParams {
 	if (query.articleNonViolated.length) params.set('articleNonViolated', query.articleNonViolated.join(','));
 	if (query.respondentState.length) params.set('respondentState', query.respondentState.join(','));
 	if (query.documentType.length) params.set('documentType', query.documentType.join(','));
+	if (query.echrDocumentType?.length) params.set('echrDocumentType', query.echrDocumentType.join(','));
+	if (query.rsDocumentType?.length) params.set('rsDocumentType', query.rsDocumentType.join(','));
 	if (query.importance.length) params.set('importance', query.importance.join(','));
 	if (query.language.length) params.set('language', query.language.join(','));
 	if (query.instances.length) params.set('instances', query.instances.join(','));
@@ -687,6 +719,8 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 	query.articleNonViolated = sanitizeStringArray(splitList(params.get('articleNonViolated')));
 	query.respondentState = sanitizeStringArray(splitList(params.get('respondentState')));
 	query.documentType = sanitizeStringArray(splitList(params.get('documentType')));
+	query.echrDocumentType = sanitizeStringArray(splitList(params.get('echrDocumentType')));
+	query.rsDocumentType = sanitizeStringArray(splitList(params.get('rsDocumentType')));
 	query.instances = sanitizeStringArray(splitList(params.get('instances')));
 	query.domains = sanitizeStringArray(splitList(params.get('domains')));
 	query.articles = sanitizeStringArray(splitList(params.get('articles')));
@@ -707,6 +741,8 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 	}
 	query.language = splitList(params.get('language')).slice(0, MAX_ARRAY_ITEMS).map((v) => v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3));
 	query.scoped.echr.language = splitList(params.get('echrLanguage')).slice(0, MAX_ARRAY_ITEMS).map((v) => v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3));
+	query.originatingBody = splitList(params.get('originatingBody')).slice(0, MAX_ARRAY_ITEMS);
+	query.scoped.echr.originatingBody = splitList(params.get('echrOriginatingBody')).slice(0, MAX_ARRAY_ITEMS);
 
 	// ── Dates (format-validated) ──
 	const dateStart = params.get('dateStart');
