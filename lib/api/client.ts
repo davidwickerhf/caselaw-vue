@@ -25,6 +25,23 @@ const API_BASE = '';
 
 const DEFAULT_PAGE_SIZE = 50;
 
+function apiUrl(path: string) {
+    if (typeof window === 'undefined') return `${API_BASE}${path}`;
+    return new URL(`${API_BASE}${path}`, window.location.origin).toString();
+}
+
+async function fetchJsonResponse(path: string, init: RequestInit) {
+    const url = apiUrl(path);
+    try {
+        return await fetch(url, init);
+    } catch (err) {
+        const message = err instanceof Error && err.message
+            ? err.message
+            : String(err);
+        throw new Error(`Request failed for ${url}: ${message}`);
+    }
+}
+
 type CombinedNode = ApiNode & { data: Record<string, unknown> & { dataset?: string; isResult?: string | boolean } };
 type CombinedResponse = {
     nodes: ApiNode[];
@@ -389,7 +406,7 @@ export async function fetchCombinedPage(
 ): Promise<PageResult> {
     const body = buildCombinedPayload(query, group, pageSize, cursor);
 
-    const response = await fetch(`${API_BASE}/api/combined`, {
+    const response = await fetchJsonResponse('/api/combined', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -460,7 +477,7 @@ export async function fetchExpandNode(
         if (ds === 'ECHR' || ds === 'RS') body.nodeDataset = ds;
     }
 
-    const response = await fetch(`${API_BASE}/api/combined/expand`, {
+    const response = await fetchJsonResponse('/api/combined/expand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -609,8 +626,8 @@ export type FullTextResult = {
 /**
  * Fetch the full text for a document (POST-only endpoints).
  *
- * ECHR:        POST /api/echr/text    { ecli }  → languages map (all languages)
- * Rechtspraak: POST /api/network/text { ecli }  → { ecli, full_text }
+ * ECHR:        POST /api/echr/text        { ecli }  → languages map (all languages)
+ * Rechtspraak: POST /api/rechtspraak/text { ecli }  → { ecli, full_text }
  *
  * For ECHR we omit the language param so the backend returns all available
  * languages in one response. The component can then switch locally.
@@ -628,14 +645,14 @@ export async function fetchDocumentFullText(
     }
 
     const signal = options?.signal;
-    const endpoint = source === 'HUDOC'
-        ? `${API_BASE}/api/echr/text`
-        : `${API_BASE}/api/network/text`;
 
     try {
         const body: Record<string, unknown> = { ecli: cleanEcli };
 
-        const response = await fetch(endpoint, {
+        const path = source === 'HUDOC'
+            ? '/api/echr/text'
+            : '/api/rechtspraak/text';
+        const response = await fetchJsonResponse(path, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
