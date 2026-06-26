@@ -2,6 +2,18 @@
 
 Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
 
+## Environment variables
+
+All `/api/**` requests are proxied server-side through Nitro to the backend, which
+requires a bearer token. Configure these (see `.env.example`):
+
+- `NUXT_API_BACKEND_URL` — backend API base URL (defaults to the production API).
+- `NUXT_API_BEARER_TOKEN` — bearer token for the backend (server-only; the proxy
+  adds the `Authorization: Bearer …` header, so set the raw token without a prefix).
+
+On Vercel, set `NUXT_API_BEARER_TOKEN` for the Production environment and redeploy —
+env-var changes only apply to new deployments.
+
 ## Setup
 
 Make sure to install dependencies:
