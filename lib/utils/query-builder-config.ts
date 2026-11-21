@@ -40,14 +40,32 @@ export const QUERY_BUILDER_FIELDS_RS: QueryBuilderField[] = [
     { value: 'selectedLaws', label: 'Selected Laws' }
 ];
 
+export const QUERY_BUILDER_FIELDS_CJEU: QueryBuilderField[] = [
+    { value: 'subject', label: 'Subject' },
+    { value: 'country', label: 'Referring Country' },
+    { value: 'party', label: 'Party' },
+    { value: 'judge_rapporteur', label: 'Judge-Rapporteur' },
+    { value: 'advocate_general', label: 'Advocate General' },
+    { value: 'eu_law', label: 'EU Law (CELEX)' },
+    { value: 'case_number', label: 'Case Number' },
+    { value: 'celex', label: 'CELEX Number' },
+    { value: 'cjeu_document_type', label: 'Document Type' },
+    { value: 'court', label: 'Court' },
+    { value: 'formation', label: 'Formation' },
+    { value: 'procedure_type', label: 'Procedure Type' },
+    { value: 'importance', label: 'Importance' }
+];
+
 export const QUERY_BUILDER_FIELDS_BY_SCOPE: Record<SourceScope, QueryBuilderField[]> = {
     ANY: QUERY_BUILDER_FIELDS_COMMON,
     ECHR: [...QUERY_BUILDER_FIELDS_COMMON, ...QUERY_BUILDER_FIELDS_ECHR],
-    RS: [...QUERY_BUILDER_FIELDS_COMMON, ...QUERY_BUILDER_FIELDS_RS]
+    RS: [...QUERY_BUILDER_FIELDS_COMMON, ...QUERY_BUILDER_FIELDS_RS],
+    CJEU: [...QUERY_BUILDER_FIELDS_COMMON, ...QUERY_BUILDER_FIELDS_CJEU]
 };
 
 const ECHR_ONLY_FIELDS = new Set(QUERY_BUILDER_FIELDS_ECHR.map((f) => f.value));
 const RS_ONLY_FIELDS = new Set(QUERY_BUILDER_FIELDS_RS.map((f) => f.value));
+const CJEU_ONLY_FIELDS = new Set(QUERY_BUILDER_FIELDS_CJEU.map((f) => f.value));
 
 export const QUERY_BUILDER_OPERATORS: Record<string, QueryBuilderOperator[]> = {
     text: [
@@ -147,6 +165,48 @@ export const QUERY_BUILDER_OPERATORS: Record<string, QueryBuilderOperator[]> = {
     application_number: [
         { value: 'equals', label: 'is' },
         { value: 'contains', label: 'contains' }
+    ],
+    subject: [
+        { value: 'equals', label: 'is' },
+        { value: 'not_equals', label: 'is not' }
+    ],
+    country: [
+        { value: 'equals', label: 'is' },
+        { value: 'not_equals', label: 'is not' }
+    ],
+    party: [
+        { value: 'equals', label: 'is' },
+        { value: 'not_equals', label: 'is not' }
+    ],
+    judge_rapporteur: [
+        { value: 'equals', label: 'is' },
+        { value: 'not_equals', label: 'is not' }
+    ],
+    advocate_general: [
+        { value: 'equals', label: 'is' },
+        { value: 'not_equals', label: 'is not' }
+    ],
+    eu_law: [
+        { value: 'equals', label: 'cites' },
+        { value: 'not_equals', label: 'does not cite' }
+    ],
+    case_number: [
+        { value: 'equals', label: 'is' },
+        { value: 'contains', label: 'contains' },
+        { value: 'not_contains', label: 'does not contain' }
+    ],
+    celex: [
+        { value: 'equals', label: 'is' },
+        { value: 'contains', label: 'contains' },
+        { value: 'not_contains', label: 'does not contain' }
+    ],
+    cjeu_document_type: [{ value: 'equals', label: 'is' }],
+    court: [{ value: 'equals', label: 'is' }],
+    formation: [{ value: 'equals', label: 'is' }],
+    procedure_type: [
+        { value: 'contains', label: 'contains' },
+        { value: 'equals', label: 'is' },
+        { value: 'not_contains', label: 'does not contain' }
     ]
 };
 
@@ -161,5 +221,6 @@ export function defaultFieldForScope(scope: SourceScope): string {
 export function defaultScopeForField(field: string): SourceScope {
     if (ECHR_ONLY_FIELDS.has(field)) return 'ECHR';
     if (RS_ONLY_FIELDS.has(field)) return 'RS';
+    if (CJEU_ONLY_FIELDS.has(field)) return 'CJEU';
     return 'ANY';
 }

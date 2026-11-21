@@ -18,7 +18,7 @@ export type ExampleItem = {
   description: string
   searchText?: string
   group: QueryBuilderGroup
-  scope: 'ECHR' | 'RS' | 'MIXED'
+  scope: 'ECHR' | 'RS' | 'CJEU' | 'MIXED'
   tags: string[]
 }
 
@@ -407,9 +407,9 @@ export const BUILDER_EXAMPLES: ExampleItem[] = [
   {
     id: genId(),
     title: 'ECHR language + judgment date',
-    description: 'Combine ISO‑3 language codes with an exact judgment date.',
+    description: 'Combine a language code with an exact judgment date.',
     group: makeGroup('AND', [
-      makeRule('language', 'ENG', 'equals', 'ECHR'),
+      makeRule('language', 'en', 'equals', 'ECHR'),
       makeRule('date_judgment_start', '2020-05-01', 'equals', 'ECHR'),
     ]),
     scope: 'ECHR',
@@ -436,6 +436,28 @@ export const BUILDER_EXAMPLES: ExampleItem[] = [
     ]),
     scope: 'RS',
     tags: ['domain', 'year'],
+  },
+  {
+    id: genId(),
+    title: 'CJEU data protection rulings',
+    description: 'Court of Justice cases on data protection since 2018.',
+    group: makeGroup('AND', [
+      makeRule('subject', 'Data protection', 'equals', 'CJEU'),
+      makeRule('court', 'CJEU', 'equals', 'CJEU'),
+      makeRule('year', '2018', 'after', 'ANY'),
+    ]),
+    scope: 'CJEU',
+    tags: ['subject', 'court', 'year'],
+  },
+  {
+    id: genId(),
+    title: 'CJEU Advocate General opinions',
+    description: "Opinions by Advocate General Kokott and the judgments they were delivered in.",
+    group: makeGroup('AND', [
+      makeRule('advocate_general', 'Kokott', 'equals', 'CJEU'),
+    ]),
+    scope: 'CJEU',
+    tags: ['advocate general'],
   },
   {
     id: genId(),

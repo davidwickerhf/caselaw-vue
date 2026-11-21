@@ -30,9 +30,12 @@ import Button from "~/components/ui/button/Button.vue";
 import Tooltip from "~/components/ui/tooltip/Tooltip.vue";
 import type { Citation } from "~/lib/types";
 import { formatDate } from "~/lib/utils/utils";
+import { languageLabel, CJEU_COURT_LABELS, CJEU_DOCUMENT_TYPE_LABELS } from "~/lib/utils/constants";
+import { sourceLabel, sourceShortLabel, sourceBadgeVariant, datasetForSource } from "~/lib/utils/sources";
 import {
 	fetchExpandNode,
 	fetchDocumentFullText,
+	transformApiNode,
 	type EchrLanguageEntry,
 } from "~/lib/api/client";
 import { useUserData } from "~/composables/useUserData";
@@ -90,46 +93,8 @@ const availableLanguages = computed(() => {
 
 const isEchr = computed(() => props.citation?.source === "HUDOC");
 
-const LANGUAGE_LABELS: Record<string, string> = {
-	ENG: "English",
-	FRE: "French",
-	GER: "German",
-	ITA: "Italian",
-	SPA: "Spanish",
-	RUS: "Russian",
-	TUR: "Turkish",
-	UKR: "Ukrainian",
-	ROM: "Romanian",
-	ARM: "Armenian",
-	AZE: "Azerbaijani",
-	BOS: "Bosnian",
-	BUL: "Bulgarian",
-	CAT: "Catalan",
-	CZE: "Czech",
-	DUT: "Dutch",
-	EST: "Estonian",
-	FIN: "Finnish",
-	GEO: "Georgian",
-	GRE: "Greek",
-	HUN: "Hungarian",
-	LAV: "Latvian",
-	LIT: "Lithuanian",
-	MAC: "Macedonian",
-	MLT: "Maltese",
-	MOL: "Moldovan",
-	MON: "Montenegrin",
-	NOR: "Norwegian",
-	POL: "Polish",
-	POR: "Portuguese",
-	SCR: "Serbian",
-	SLO: "Slovak",
-	SLV: "Slovenian",
-	SWE: "Swedish",
-	ALB: "Albanian",
-};
-
 function getLanguageLabel(code: string) {
-	return LANGUAGE_LABELS[code] || code;
+	return languageLabel(code) || code;
 }
 
 function copyEcli() {
@@ -248,7 +213,7 @@ async function loadFullText() {
 	try {
 		const result = await fetchDocumentFullText(
 			props.citation.ecli,
-			props.citation.source as "HUDOC" | "Rechtspraak",
+			props.citation.source,
 			{ signal: fullTextAbort.signal },
 		);
 		if (result.error) {
@@ -358,7 +323,7 @@ async function loadCitedDocuments() {
 	citedLoading.value = true;
 	citedError.value = null;
 	try {
-		const dataset = props.citation.source === "HUDOC" ? "ECHR" : "RS";
+		const dataset = datasetForSource(props.citation.source);
 		const nodeEcli = props.citation.ecli;
 		const result = await fetchExpandNode(nodeEcli, {
 			degreesSource: 1,
@@ -384,35 +349,7 @@ async function loadCitedDocuments() {
 		expandCitedByEclis.value = citedBySet;
 
 		// Transform expanded nodes to Citations (they come as ApiNode)
-		citedDocs.value = result.expandedNodes.map((node) => {
-			const d = node.data as Record<string, unknown>;
-			const ecli = (d.ecli as string) || node.id;
-			const ds = (d.dataset as string) || "";
-			const isEchr = ds === "ECHR" || ds === "echr";
-			return {
-				id: ecli,
-				ecli,
-				year: 0,
-				summary: (d.summary as string) || (d.headnote as string) || "",
-				instance: (d.instance as string) || "",
-				domain: "",
-				domains: [],
-				nCited: 0,
-				nCiting: 0,
-				topics: "",
-				document_type: (d.document_type as string) || "",
-				procedure_type: "",
-				url_publication: (d.url_publication as string) || "",
-				source: isEchr ? "HUDOC" : "Rechtspraak",
-				languages: Array.isArray(d.languages) ? d.languages as string[] : (isEchr ? [] : ['NLD']),
-				title: (d.title as string) || (d.headnote as string) || undefined,
-				respondent_state: d.respondent_state as string | undefined,
-				date:
-					(d.date_judgment as string) ||
-					(d.date_decision as string) ||
-					undefined,
-			} as Citation;
-		});
+		citedDocs.value = result.expandedNodes.map((node) => transformApiNode(node));
 		citedLoaded.value = true;
 	} catch (err) {
 		citedError.value =
@@ -516,17 +453,25 @@ const metadataItems = computed(() => {
 			value: c.respondent_state,
 			icon: MapPin,
 		});
+	const isCjeuDoc = c.source === "CJEU";
 	if (c.document_type)
 		items.push({
 			label: "Document Type",
-			value: c.document_type,
+			value: isCjeuDoc ? CJEU_DOCUMENT_TYPE_LABELS[c.document_type] || c.document_type : c.document_type,
 			icon: FileText,
 		});
-	if (c.instance)
-		items.push({ label: "Court Instance", value: c.instance, icon: Scale });
-	if (c.domain) items.push({ label: "Domain", value: c.domain, icon: Tag });
+	if (isCjeuDoc) {
+		if (c.case_number) items.push({ label: "Case Number", value: c.case_number, icon: Hash });
+		if (c.court) items.push({ label: "Court", value: CJEU_COURT_LABELS[c.court] || c.court, icon: Scale });
+		if (c.formation) items.push({ label: "Formation", value: c.formation, icon: Scale });
+		if (c.advocate_general) items.push({ label: "Advocate General", value: c.advocate_general, icon: Gavel });
+	} else {
+		if (c.instance)
+			items.push({ label: "Court Instance", value: c.instance, icon: Scale });
+		if (c.domain) items.push({ label: "Domain", value: c.domain, icon: Tag });
+	}
 	if (c.languages && c.languages.length > 0)
-		items.push({ label: "Languages", value: c.languages.join(', '), icon: Globe });
+		items.push({ label: "Languages", value: c.languages.map((l) => getLanguageLabel(l)).join(', '), icon: Globe });
 	if (c.originating_body)
 		items.push({ label: "Originating Body", value: c.originating_body, icon: Scale });
 	if (c.application_number)
@@ -553,10 +498,10 @@ const metadataItems = computed(() => {
 			<!-- Top bar: meta pills + action icons -->
 			<div class="flex items-center gap-2 pl-5 pr-2 pt-5 pb-0">
 				<Badge
-					:variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
+					:variant="sourceBadgeVariant(citation.source)"
 					class="text-[10px] h-5 px-1.5"
 				>
-					{{ citation.source === "HUDOC" ? "ECHR" : "Rechtspraak" }}
+					{{ sourceLabel(citation.source) }}
 				</Badge>
 				<span
 					v-if="importanceLabel"
@@ -1119,10 +1064,10 @@ const metadataItems = computed(() => {
 								@click="emit('selectCitation', doc)"
 							>
 								<Badge
-									:variant="doc.source === 'HUDOC' ? 'default' : 'secondary'"
+									:variant="sourceBadgeVariant(doc.source)"
 									class="text-[10px] mt-0.5 shrink-0"
 								>
-									{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}
+									{{ sourceShortLabel(doc.source) }}
 								</Badge>
 								<div class="min-w-0 flex-1">
 									<div class="text-xs font-medium text-foreground truncate">
@@ -1216,10 +1161,10 @@ const metadataItems = computed(() => {
 								@click="emit('selectCitation', doc)"
 							>
 								<Badge
-									:variant="doc.source === 'HUDOC' ? 'default' : 'secondary'"
+									:variant="sourceBadgeVariant(doc.source)"
 									class="text-[10px] mt-0.5 shrink-0"
 								>
-									{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}
+									{{ sourceShortLabel(doc.source) }}
 								</Badge>
 								<div class="min-w-0 flex-1">
 									<div class="text-xs font-medium text-foreground truncate">

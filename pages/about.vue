@@ -30,6 +30,7 @@ import Button from "~/components/ui/button/Button.vue";
 const coverage = {
 	echr: "TBD",
 	rs: "TBD",
+	cjeu: "TBD",
 };
 
 const team = {
@@ -238,6 +239,15 @@ const collaborators = [
 											document types, and selected laws.
 										</div>
 									</div>
+									<div>
+										<div class="text-foreground/90 font-semibold">
+											CJEU (CURIA)
+										</div>
+										<div class="text-muted-foreground">
+											Court of Justice and General Court judgments, orders and
+											Advocate General opinions, with subject, party and court filters.
+										</div>
+									</div>
 								</div>
 							</div>
 						</div>
@@ -285,7 +295,7 @@ const collaborators = [
 							class="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground"
 						>
 							<Compass class="h-3.5 w-3.5 text-primary/70" />
-							Unify ECHR and Rechtspraak in a single query language.
+							Unify ECHR, Rechtspraak and CJEU in a single query language.
 						</span>
 						<span
 							class="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground"
@@ -566,8 +576,8 @@ const collaborators = [
 									Primary data sources
 								</div>
 								<div>
-									Rechtspraak via Elasticsearch + DynamoDB (metadata/edges) and
-									ECHR via PostgreSQL full text.
+									Rechtspraak, ECHR and CJEU in one PostgreSQL schema, with
+									full text and citation edges for all three.
 								</div>
 							</div>
 							<div
@@ -640,8 +650,8 @@ const collaborators = [
 								Rechtspraak
 							</div>
 							<p>
-								Dutch case law metadata indexed in Elasticsearch. Supports legal
-								domains, court instances, document types, and selected laws.
+								Dutch case law metadata and full text. Supports legal domains,
+								court instances, document types, and selected laws.
 							</p>
 							<div
 								class="text-[11px] uppercase tracking-wider text-muted-foreground/70"
@@ -649,6 +659,25 @@ const collaborators = [
 								Coverage through
 							</div>
 							<div class="text-sm text-foreground">{{ coverage.rs }}</div>
+						</div>
+						<div
+							class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-3"
+						>
+							<div class="text-xs font-semibold text-foreground">
+								CJEU (CURIA)
+							</div>
+							<p>
+								Court of Justice of the European Union: judgments, orders and
+								Advocate General opinions in the official EU languages. Supports
+								subjects, referring countries, parties, judge-rapporteurs,
+								Advocates General, courts, formations and EU law cited.
+							</p>
+							<div
+								class="text-[11px] uppercase tracking-wider text-muted-foreground/70"
+							>
+								Coverage through
+							</div>
+							<div class="text-sm text-foreground">{{ coverage.cjeu }}</div>
 						</div>
 					</div>
 				</section>

@@ -20,6 +20,7 @@ import Button from "~/components/ui/button/Button.vue";
 import Separator from "~/components/ui/separator/Separator.vue";
 import type { Citation } from "~/lib/types";
 import { formatDate } from "~/lib/utils/utils";
+import { sourceLabel, sourceShortLabel, sourceBadgeVariant } from "~/lib/utils/sources";
 
 const props = defineProps<{
 	citation: Citation | null;
@@ -79,10 +80,10 @@ const importanceLabel = computed(() =>
 				<div class="flex items-center justify-between mb-2">
 					<div class="flex items-center gap-2">
 						<Badge
-							:variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
+							:variant="sourceBadgeVariant(citation.source)"
 							class="text-xs"
 						>
-							{{ citation.source === "HUDOC" ? "ECHR" : "Rechtspraak" }}
+							{{ sourceLabel(citation.source) }}
 						</Badge>
 						<span
 							v-if="importanceLabel"

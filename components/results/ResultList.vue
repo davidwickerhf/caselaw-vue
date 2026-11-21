@@ -6,6 +6,7 @@ import Badge from '~/components/ui/badge/Badge.vue'
 import ResultCard from './ResultCard.vue'
 import type { Citation } from '~/lib/types'
 import { formatDate } from '~/lib/utils/utils'
+import { sourceLabel, sourceShortLabel, sourceBadgeVariant } from '~/lib/utils/sources'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
@@ -191,10 +192,10 @@ const skeletonCount = computed(() => props.pageSize || 10)
             </div>
             <div class="flex items-center">
               <Badge
-                :variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
+                :variant="sourceBadgeVariant(citation.source)"
                 class="text-[10px]"
               >
-                {{ citation.source === 'HUDOC' ? 'ECHR' : 'Rechtspraak' }}
+                {{ sourceLabel(citation.source) }}
               </Badge>
             </div>
             <div class="text-[11px] text-muted-foreground truncate">

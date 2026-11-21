@@ -35,10 +35,28 @@ const RS_PATTERNS = [
     'netherlands cases',
 ];
 
+const CJEU_PATTERNS = [
+    'court of justice of the european union',
+    'european court of justice',
+    'eu court of justice',
+    'court of justice',
+    'general court',
+    'cjeu cases',
+    'cjeu',
+    'cjue',
+    'curia',
+    'ecj',
+    'eu case law',
+    'hof van justitie van de europese unie',
+    'hof van justitie',
+    'eu-hof',
+];
+
 // Sort longest first
 const ALL_SOURCE_PATTERNS = [
     ...ECHR_PATTERNS.map((p) => ({ pattern: p, value: 'ECHR', display: 'ECHR' })),
     ...RS_PATTERNS.map((p) => ({ pattern: p, value: 'RS', display: 'Rechtspraak' })),
+    ...CJEU_PATTERNS.map((p) => ({ pattern: p, value: 'CJEU', display: 'CJEU' })),
 ].sort((a, b) => b.pattern.length - a.pattern.length);
 
 export type SourceRecognizerResult = {

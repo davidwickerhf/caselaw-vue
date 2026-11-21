@@ -23,6 +23,7 @@ import {
 	ChevronDown,
 } from "lucide-vue-next";
 import Badge from "~/components/ui/badge/Badge.vue";
+import { sourceLabel, sourceShortLabel, sourceBadgeVariant } from "~/lib/utils/sources";
 import Tooltip from "~/components/ui/tooltip/Tooltip.vue";
 import { useHistory, type HistoryEntry } from "~/composables/useHistory";
 import {
@@ -75,9 +76,7 @@ function formatTime(timestamp: number) {
 }
 
 function sourceBadge(source: string) {
-	if (source === "HUDOC") return "ECHR";
-	if (source === "Rechtspraak") return "RS";
-	return source;
+	return sourceShortLabel(source);
 }
 
 function handleOpenDocument(ecli: string) { emit("openDocument", ecli); }
@@ -343,7 +342,7 @@ function activityIconFor(type: ActivityEntry["type"]) {
 											class="group/doc flex items-center gap-2 rounded-md px-2 py-1 cursor-pointer transition-colors hover:bg-muted/40"
 											@click="handleOpenDocument(doc.ecli)"
 										>
-											<Badge :variant="doc.source === 'HUDOC' ? 'default' : 'secondary'" class="text-[8px] h-3.5 px-1 shrink-0">{{ sourceBadge(doc.source) }}</Badge>
+											<Badge :variant="sourceBadgeVariant(doc.source)" class="text-[8px] h-3.5 px-1 shrink-0">{{ sourceBadge(doc.source) }}</Badge>
 											<span class="truncate text-[11px] text-foreground/70 flex-1">{{ doc.title || doc.ecli }}</span>
 											<button
 												class="shrink-0 opacity-0 group-hover/doc:opacity-100 text-muted-foreground/30 hover:text-destructive transition-all"
@@ -411,7 +410,7 @@ function activityIconFor(type: ActivityEntry["type"]) {
 								@dragend="onDragEnd"
 							>
 								<button class="flex items-center gap-2 flex-1 min-w-0 text-left" @click="handleOpenDocument(doc.ecli)">
-									<Badge :variant="doc.source === 'HUDOC' ? 'default' : 'secondary'" class="text-[8px] h-3.5 px-1 shrink-0">{{ sourceBadge(doc.source) }}</Badge>
+									<Badge :variant="sourceBadgeVariant(doc.source)" class="text-[8px] h-3.5 px-1 shrink-0">{{ sourceBadge(doc.source) }}</Badge>
 									<span class="truncate text-[11px] text-foreground/70">{{ doc.title || doc.ecli }}</span>
 								</button>
 								<div class="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -573,7 +572,7 @@ function activityIconFor(type: ActivityEntry["type"]) {
 							class="group flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/40"
 							@click="handleOpenDocument(doc.ecli)"
 						>
-							<Badge :variant="doc.source === 'HUDOC' ? 'default' : 'secondary'" class="text-[8px] h-3.5 px-1 shrink-0">{{ sourceBadge(doc.source) }}</Badge>
+							<Badge :variant="sourceBadgeVariant(doc.source)" class="text-[8px] h-3.5 px-1 shrink-0">{{ sourceBadge(doc.source) }}</Badge>
 							<div class="flex-1 min-w-0">
 								<span class="block truncate text-[12px] text-foreground/75">{{ doc.title || doc.ecli }}</span>
 								<div class="flex items-center gap-1.5 mt-0.5">

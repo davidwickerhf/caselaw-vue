@@ -8,6 +8,7 @@ defineProps<{
   totalIsExact?: boolean
   rsTotal?: number
   echrTotal?: number
+  cjeuTotal?: number
   hasMore?: boolean
   loadingMore?: boolean
   aiSummary?: string
@@ -33,13 +34,14 @@ const summaryExpanded = ref(false)
           <template v-else>{{ total }}+</template>
         </span>
         <span>result{{ total !== 1 ? 's' : '' }}</span>
-        <template v-if="rsTotal != null && echrTotal != null">
+        <template v-for="part in [
+          { label: 'RS', count: rsTotal },
+          { label: 'ECHR', count: echrTotal },
+          { label: 'CJEU', count: cjeuTotal },
+        ].filter((p) => p.count != null && p.count > 0)" :key="part.label">
           <span class="text-muted-foreground/50">&middot;</span>
-          <span class="tabular-nums">{{ rsTotal }}</span>
-          <span class="text-muted-foreground/60">RS</span>
-          <span class="text-muted-foreground/50">&middot;</span>
-          <span class="tabular-nums">{{ echrTotal }}</span>
-          <span class="text-muted-foreground/60">ECHR</span>
+          <span class="tabular-nums">{{ part.count }}</span>
+          <span class="text-muted-foreground/60">{{ part.label }}</span>
         </template>
       </div>
 

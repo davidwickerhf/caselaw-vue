@@ -1,6 +1,7 @@
-import { createDefaultSearchQuery, DataSource, type ParsedToken, type QueryBuilderGroup, type QueryBuilderRule, type SearchQuery, type CommonSearchFilters, type SourceScope } from '~/lib/types';
+import { createDefaultSearchQuery, ALL_DATA_SOURCES, DataSource, type ParsedToken, type QueryBuilderGroup, type QueryBuilderRule, type SearchQuery, type CommonSearchFilters, type SourceScope } from '~/lib/types';
 import { IMPORTANCE_LEVELS, RECHTSPRAAK_DOMAINS, RECHTSPRAAK_DOMAIN_ALIASES } from '~/lib/utils/constants';
 import { defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
+import { DATA_SOURCE_LABELS, parseDataSource } from '~/lib/utils/sources';
 import {
 	sanitizeText,
 	sanitizeFilterValue,
@@ -130,7 +131,7 @@ export function searchQueryToTokens(query: SearchQuery): ParsedToken[] {
 				id: genId(),
 				type: 'source',
 				value: src,
-				display: src === DataSource.ECHR ? 'ECHR' : 'Rechtspraak',
+				display: DATA_SOURCE_LABELS[src],
 			});
 		}
 	}
@@ -203,6 +204,10 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 	for (const value of query.documentType) pushRule('document_type', 'equals', value, 'ANY');
 	for (const value of query.echrDocumentType || []) pushRule('document_type', 'equals', value, 'ECHR');
 	for (const value of query.rsDocumentType || []) pushRule('document_type', 'equals', value, 'RS');
+	for (const value of query.cjeuDocumentType || []) pushRule('cjeu_document_type', 'equals', value, 'CJEU');
+	for (const value of query.cjeuCourt || []) pushRule('court', 'equals', value, 'CJEU');
+	for (const value of query.cjeuFormation || []) pushRule('formation', 'equals', value, 'CJEU');
+	for (const value of query.cjeuImportance || []) pushRule('importance', 'equals', String(value), 'CJEU');
 	for (const value of query.importance) pushRule('importance', 'equals', String(value), 'ANY');
 	for (const value of query.language) pushRule('language', 'equals', value, 'ANY');
 	for (const value of query.originatingBody) pushRule('originating_body', 'equals', value, 'ANY');
@@ -210,9 +215,16 @@ export function searchQueryToQueryBuilderGroup(query: SearchQuery): QueryBuilder
 	for (const value of query.domains) pushRule('domain', 'equals', value, 'ANY');
 	for (const value of query.articles) pushRule('articles', 'contains', value, 'ANY');
 	for (const value of query.selectedLaws) pushRule('selectedLaws', 'equals', value, 'ANY');
-	if (query.sources.join(',') !== defaults.sources.join(',')) {
-		for (const src of query.sources) {
-			pushRule('source', 'equals', src, 'ANY');
+	const selectedSources = new Set(query.sources);
+	if (selectedSources.size > 0 && ALL_DATA_SOURCES.some((src) => !selectedSources.has(src))) {
+		if (selectedSources.size === 1) {
+			pushRule('source', 'equals', query.sources[0], 'ANY');
+		} else {
+			// Several "source equals" rules under AND would keep only the last
+			// one, so leave out the unselected corpora instead.
+			for (const src of ALL_DATA_SOURCES) {
+				if (!selectedSources.has(src)) pushRule('source', 'not_equals', src, 'ANY');
+			}
 		}
 	}
 
@@ -307,9 +319,11 @@ function parseDateValue(value: string): string | null {
 }
 
 function normalizeIso3(value: string): string | null {
-	const trimmed = normalizeText(value).toUpperCase();
-	if (!/^[A-Z]{3}$/.test(trimmed)) return null;
-	return trimmed;
+	// ISO 639-1 ("en", what the API stores) or a legacy HUDOC code ("ENG").
+	const trimmed = normalizeText(value);
+	if (/^[A-Za-z]{2}$/.test(trimmed)) return trimmed.toLowerCase();
+	if (/^[A-Za-z]{3}$/.test(trimmed)) return trimmed.toUpperCase();
+	return null;
 }
 
 const DOMAIN_SET = new Set(RECHTSPRAAK_DOMAINS.map((d) => d.toLowerCase()));
@@ -350,7 +364,8 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 	const importanceAny = new Set<number>();
 	const importanceEchr = new Set<number>();
 	const sourceSet = new Set<DataSource>();
-	const scopeTargets: Record<SourceScope, CommonSearchFilters> = {
+	const excludedSources = new Set<DataSource>();
+	const scopeTargets: Record<Exclude<SourceScope, 'CJEU'>, CommonSearchFilters> = {
 		ANY: query,
 		ECHR: query.scoped.echr,
 		RS: query.scoped.rs
@@ -361,6 +376,11 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 	for (const rule of flattenedRules) {
 		const value = normalizeText(rule.value || '');
 		if (!value) continue;
+		if (rule.field === 'source' && rule.operator === 'not_equals') {
+			const excluded = parseDataSource(value);
+			if (excluded) excludedSources.add(excluded);
+			continue;
+		}
 		if (rule.operator.startsWith('not_')) {
 			continue;
 		}
@@ -369,6 +389,9 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 		const scope: SourceScope = isFieldAllowed(rawScope, rule.field)
 			? rawScope
 			: defaultScopeForField(rule.field);
+		// CJEU rules have no flat SearchQuery form: they travel in the query
+		// builder group, which is what the search sends.
+		if (scope === 'CJEU') continue;
 		const target = scopeTargets[scope];
 
 		switch (rule.field) {
@@ -563,12 +586,8 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 			}
 			case 'source': {
 				if (rule.operator !== 'equals') continue;
-				const upper = value.toUpperCase();
-				const src = upper === 'ECHR' || upper === 'HUDOC'
-					? DataSource.ECHR
-					: upper === 'RS' || upper === 'RECHTSPRAAK'
-						? DataSource.RS
-						: null;
+				if (['ANY', 'ALL', 'BOTH'].includes(value.toUpperCase())) continue;
+				const src = parseDataSource(value);
 				if (!src) return { error: `Unknown source "${value}".` };
 				sourceSet.add(src);
 				break;
@@ -581,6 +600,10 @@ export function queryBuilderGroupToSearchQuery(group: QueryBuilderGroup): { quer
 	if (importanceAny.size > 0) query.importance = Array.from(importanceAny);
 	if (importanceEchr.size > 0) query.scoped.echr.importance = Array.from(importanceEchr);
 	if (sourceSet.size > 0) query.sources = Array.from(sourceSet);
+	else if (excludedSources.size > 0) {
+		const remaining = ALL_DATA_SOURCES.filter((src) => !excludedSources.has(src));
+		if (remaining.length > 0) query.sources = remaining;
+	}
 
 	return { query };
 }
@@ -638,6 +661,10 @@ export function searchQueryToParams(query: SearchQuery): URLSearchParams {
 	if (query.documentType.length) params.set('documentType', query.documentType.join(','));
 	if (query.echrDocumentType?.length) params.set('echrDocumentType', query.echrDocumentType.join(','));
 	if (query.rsDocumentType?.length) params.set('rsDocumentType', query.rsDocumentType.join(','));
+	if (query.cjeuDocumentType?.length) params.set('cjeuDocumentType', query.cjeuDocumentType.join(','));
+	if (query.cjeuCourt?.length) params.set('cjeuCourt', query.cjeuCourt.join(','));
+	if (query.cjeuFormation?.length) params.set('cjeuFormation', query.cjeuFormation.join(','));
+	if (query.cjeuImportance?.length) params.set('cjeuImportance', query.cjeuImportance.join(','));
 	if (query.importance.length) params.set('importance', query.importance.join(','));
 	if (query.language.length) params.set('language', query.language.join(','));
 	if (query.instances.length) params.set('instances', query.instances.join(','));
@@ -664,8 +691,8 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 		const parsedSources: DataSource[] = [];
 		for (const source of sources.slice(0, 5)) {
 			const upper = sanitizeFilterValue(source).toUpperCase();
-			if (upper === 'ECHR' || upper === 'HUDOC') parsedSources.push(DataSource.ECHR);
-			else if (upper === 'RS' || upper === 'RECHTSPRAAK') parsedSources.push(DataSource.RS);
+			const parsed = parseDataSource(upper);
+			if (parsed) parsedSources.push(parsed);
 			else return { error: `Unknown source "${upper}".` };
 		}
 		query.sources = Array.from(new Set(parsedSources));
@@ -721,6 +748,12 @@ export function paramsToSearchQuery(params: URLSearchParams): { query?: SearchQu
 	query.documentType = sanitizeStringArray(splitList(params.get('documentType')));
 	query.echrDocumentType = sanitizeStringArray(splitList(params.get('echrDocumentType')));
 	query.rsDocumentType = sanitizeStringArray(splitList(params.get('rsDocumentType')));
+	query.cjeuDocumentType = sanitizeStringArray(splitList(params.get('cjeuDocumentType')));
+	query.cjeuCourt = sanitizeStringArray(splitList(params.get('cjeuCourt')));
+	query.cjeuFormation = sanitizeStringArray(splitList(params.get('cjeuFormation')));
+	query.cjeuImportance = splitList(params.get('cjeuImportance'))
+		.map((v) => Number(v))
+		.filter((v) => Number.isInteger(v) && v >= 1 && v <= 4);
 	query.instances = sanitizeStringArray(splitList(params.get('instances')));
 	query.domains = sanitizeStringArray(splitList(params.get('domains')));
 	query.articles = sanitizeStringArray(splitList(params.get('articles')));

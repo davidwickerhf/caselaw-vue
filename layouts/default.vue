@@ -66,7 +66,7 @@ onBeforeUnmount(() => {
 
 <template>
 	<Head>
-		<Title>LegalSearch - ECHR &amp; Rechtspraak Document Search</Title>
+		<Title>LegalSearch - ECHR, Rechtspraak &amp; CJEU Document Search</Title>
 	</Head>
 	<div class="min-h-screen bg-background text-foreground flex flex-col">
 		<!-- Wrapper: sidebar + page content side by side -->

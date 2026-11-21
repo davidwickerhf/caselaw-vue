@@ -92,7 +92,7 @@ const ALLOWED_OPERATORS = new Set([
 ]);
 
 /** Allowed scopes. */
-const ALLOWED_SCOPES = new Set(['ANY', 'ECHR', 'RS']);
+const ALLOWED_SCOPES = new Set(['ANY', 'ECHR', 'RS', 'CJEU']);
 
 function parseRule(raw: UrlRule): QueryBuilderRule | null {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;

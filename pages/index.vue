@@ -277,7 +277,7 @@ onMounted(() => {
 					<p
 						class="text-muted-foreground text-lg max-w-md mx-auto leading-relaxed"
 					>
-						Search across ECHR and Rechtspraak case law with smart query parsing
+						Search across ECHR, Rechtspraak and CJEU case law with smart query parsing
 					</p>
 				</div>
 

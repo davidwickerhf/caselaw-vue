@@ -22,6 +22,7 @@ import {
 import { zoom, zoomIdentity, type ZoomBehavior } from "d3-zoom";
 import { select } from "d3-selection";
 import type { Citation } from "~/lib/types";
+import { datasetFromEcli, sourceForDataset, sourceLabel } from "~/lib/utils/sources";
 
 /* ── Props ── */
 const props = defineProps({
@@ -182,7 +183,7 @@ function truncateEcli(ecli: string): string {
 	return ecli.length > 20 ? "\u2026" + ecli.slice(-18) : ecli;
 }
 function guessSource(ecli: string): string {
-	return ecli.includes("CE:ECHR") ? "HUDOC" : "Rechtspraak";
+	return sourceForDataset(datasetFromEcli(ecli));
 }
 function nodeColor(node: GraphNode): string {
 	if (node.isRoot) return "#f97316"; // orange — current document
@@ -443,11 +444,13 @@ const colorLegend = computed(() => {
 	return items;
 });
 const shapeLegend = computed(() => {
-	const items: { shape: 'circle' | 'square'; label: string }[] = [];
+	const items: { shape: 'circle' | 'square' | 'diamond'; label: string }[] = [];
 	const hasECHR = renderNodes.value.some((n) => n.source === 'HUDOC');
-	const hasRS = renderNodes.value.some((n) => n.source !== 'HUDOC');
+	const hasCJEU = renderNodes.value.some((n) => n.source === 'CJEU');
+	const hasRS = renderNodes.value.some((n) => n.source !== 'HUDOC' && n.source !== 'CJEU');
 	if (hasECHR) items.push({ shape: 'circle', label: 'ECHR' });
 	if (hasRS) items.push({ shape: 'square', label: 'Rechtspraak' });
+	if (hasCJEU) items.push({ shape: 'diamond', label: 'CJEU' });
 	return items;
 });
 
@@ -520,6 +523,10 @@ const labelZoomThreshold = computed(() => {
 					<span
 						v-if="item.shape === 'circle'"
 						class="h-2.5 w-2.5 rounded-full shrink-0 border border-muted-foreground/40"
+					/>
+					<span
+						v-else-if="item.shape === 'diamond'"
+						class="h-2 w-2 mx-px rotate-45 shrink-0 border border-muted-foreground/40"
 					/>
 					<span
 						v-else
@@ -603,6 +610,31 @@ const labelZoomThreshold = computed(() => {
 							:opacity="node.isRoot ? 1 : 0.85"
 						/>
 					</template>
+					<!-- CJEU nodes: diamonds -->
+					<template v-else-if="node.source === 'CJEU'">
+						<rect
+							v-if="node.isRoot"
+							:x="-(nodeRadius(node) + 3)"
+							:y="-(nodeRadius(node) + 3)"
+							:width="(nodeRadius(node) + 3) * 2"
+							:height="(nodeRadius(node) + 3) * 2"
+							transform="rotate(45)"
+							:fill="nodeColor(node)"
+							opacity="0.15"
+						/>
+						<rect
+							class="graph-node"
+							:x="-nodeRadius(node) * 0.85"
+							:y="-nodeRadius(node) * 0.85"
+							:width="nodeRadius(node) * 1.7"
+							:height="nodeRadius(node) * 1.7"
+							transform="rotate(45)"
+							:fill="nodeColor(node)"
+							stroke="white"
+							:stroke-width="node.isRoot ? 2 : 1"
+							:opacity="node.isRoot ? 1 : 0.85"
+						/>
+					</template>
 					<!-- Rechtspraak nodes: rounded squares -->
 					<template v-else>
 						<!-- Glow for root -->
@@ -665,11 +697,7 @@ const labelZoomThreshold = computed(() => {
 						<span
 							class="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/50"
 						>
-							{{
-								tooltip.node.source === "HUDOC"
-									? "ECHR"
-									: "Rechtspraak"
-							}}
+							{{ sourceLabel(tooltip.node.source) }}
 						</span>
 						<span
 							v-if="tooltip.node.isRoot"

@@ -13,7 +13,7 @@ export type Citation = {
     document_type: string;
     procedure_type: string;
     url_publication: string;
-    source: 'HUDOC' | 'Rechtspraak';
+    source: CitationSource;
     // ECHR-specific fields
     itemid?: string;
     languages: string[];
@@ -35,15 +35,34 @@ export type Citation = {
     predecessor_successor_cases?: string;
     ecli_decision?: string;
     ecli_opinion?: string;
+    // CJEU-specific
+    celex?: string;
+    case_number?: string;
+    court?: string;
+    formation?: string;
+    sector?: string;
+    advocate_general?: string;
+    date_lodged?: string;
+    subjects?: string[];
+    countries?: string[];
+    parties?: string[];
+    judge_rapporteur?: string;
+    eu_law?: Array<{ celex: string; title: string | null }>;
     // Citation arrays from API
     cites?: string[];
     cited_by?: string[];
 };
 
+/** Display source of a document. 'HUDOC' is ECHR, kept for saved library entries. */
+export type CitationSource = 'HUDOC' | 'Rechtspraak' | 'CJEU';
+
 export enum DataSource {
     RS = 'RS',
-    ECHR = 'ECHR'
+    ECHR = 'ECHR',
+    CJEU = 'CJEU'
 }
+
+export const ALL_DATA_SOURCES: DataSource[] = [DataSource.ECHR, DataSource.RS, DataSource.CJEU];
 
 export enum DocType {
     // RS
@@ -57,7 +76,7 @@ export enum DocType {
     OTHER = 'OTHER'
 }
 
-export type SourceScope = 'ANY' | 'ECHR' | 'RS';
+export type SourceScope = 'ANY' | 'ECHR' | 'RS' | 'CJEU';
 
 export type CommonSearchFilters = {
     text: string;
@@ -114,6 +133,10 @@ export type SearchQuery = {
     documentType: string[];
     echrDocumentType?: string[];
     rsDocumentType?: string[];
+    cjeuDocumentType?: string[];
+    cjeuCourt?: string[];
+    cjeuFormation?: string[];
+    cjeuImportance?: number[];
     importance: number[];
     language: string[];
     originatingBody: string[];
@@ -139,6 +162,7 @@ export type SearchResult = {
     totalIsExact: boolean;
     rsTotal?: number;
     echrTotal?: number;
+    cjeuTotal?: number;
     page: number;
     pageSize: number;
     facets: SearchFacets;
@@ -164,6 +188,10 @@ export type SearchFacets = {
     domains: FacetItem[];
     originatingBodies: FacetItem[];
     languages: FacetItem[];
+    cjeuDocumentTypes: FacetItem[];
+    cjeuCourts: FacetItem[];
+    cjeuFormations: FacetItem[];
+    cjeuImportance: FacetItem[];
 };
 
 export type FacetItem = {
@@ -281,7 +309,7 @@ export function createDefaultSearchQuery(): SearchQuery {
     return {
         text: '',
         title: [],
-        sources: [DataSource.ECHR, DataSource.RS],
+        sources: [...ALL_DATA_SOURCES],
         keywords: [],
         eclis: [],
         cursor: undefined,

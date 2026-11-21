@@ -117,15 +117,20 @@ export function computeFacets(cases: Citation[]): SearchFacets {
 		documentTypes: facetMap((c) => c.document_type),
 		echrDocumentTypes: facetMap((c) => c.source === 'HUDOC' ? c.document_type : undefined),
 		rsDocumentTypes: facetMap((c) => c.source === 'Rechtspraak' ? c.document_type : undefined),
-		importance: facetMap((c) => c.importance),
-		instances: facetMap((c) => (c.instance ? c.instance : undefined)),
+		importance: facetMap((c) => c.source === 'HUDOC' ? c.importance : undefined),
+		instances: facetMap((c) => (c.source === 'Rechtspraak' && c.instance ? c.instance : undefined)),
 		domains: facetMap((c) => {
+			if (c.source !== 'Rechtspraak') return undefined;
 			if (c.domains && c.domains.length > 0) return c.domains;
 			if (c.domain) return c.domain;
 			return undefined;
 		}),
 		originatingBodies: facetMap((c) => c.originating_body),
-		languages: facetMap((c) => c.languages.length > 0 ? c.languages : undefined),
+		languages: facetMap((c) => c.source === 'HUDOC' && c.languages.length > 0 ? c.languages : undefined),
+		cjeuDocumentTypes: facetMap((c) => c.source === 'CJEU' ? c.document_type : undefined),
+		cjeuCourts: facetMap((c) => c.source === 'CJEU' ? c.court : undefined),
+		cjeuFormations: facetMap((c) => c.source === 'CJEU' ? c.formation : undefined),
+		cjeuImportance: facetMap((c) => c.source === 'CJEU' ? c.importance : undefined),
 	};
 }
 
@@ -134,18 +139,22 @@ export function computeFacets(cases: Citation[]): SearchFacets {
  */
 export function mapServerFacets(
 	raw: Record<string, Array<{ value: string | number; count: number }>>,
-	totals?: { rsTotal?: number; echrTotal?: number }
+	totals?: { rsTotal?: number; echrTotal?: number; cjeuTotal?: number }
 ): SearchFacets {
 	const toFacetItems = (arr?: Array<{ value: string | number; count: number }>): FacetItem[] =>
 		(arr || []).map(f => ({ value: String(f.value), count: f.count }));
 
 	const rsCount = totals?.rsTotal ?? (raw.rs_source ? raw.rs_source.reduce((s, f) => s + f.count, 0) : 0);
 	const echrCount = totals?.echrTotal ?? (raw.echr_document_type ? raw.echr_document_type.reduce((s, f) => s + f.count, 0) : 0);
+	const cjeuCount = totals?.cjeuTotal ?? (raw.cjeu_document_type ? raw.cjeu_document_type.reduce((s, f) => s + f.count, 0) : 0);
+	// The court facet has carried stray values from other corpora; keep the three CJEU courts.
+	const cjeuCourts = (raw.cjeu_court || []).filter((f) => ['CJEU', 'EGC', 'CST'].includes(String(f.value)));
 
 	return {
 		sources: [
 			...(rsCount > 0 ? [{ value: 'Rechtspraak', count: rsCount }] : []),
 			...(echrCount > 0 ? [{ value: 'HUDOC', count: echrCount }] : []),
+			...(cjeuCount > 0 ? [{ value: 'CJEU', count: cjeuCount }] : []),
 		],
 		years: [],
 		articles: toFacetItems(raw.echr_article_violated),
@@ -174,6 +183,10 @@ export function mapServerFacets(
 		domains: toFacetItems(raw.rs_domain),
 		originatingBodies: toFacetItems(raw.echr_originating_body),
 		languages: toFacetItems(raw.echr_language),
+		cjeuDocumentTypes: toFacetItems(raw.cjeu_document_type),
+		cjeuCourts: toFacetItems(cjeuCourts),
+		cjeuFormations: toFacetItems(raw.cjeu_formation),
+		cjeuImportance: toFacetItems(raw.cjeu_importance),
 	};
 }
 
@@ -189,13 +202,14 @@ function buildSearchResult(
 		totalIsExact?: boolean;
 		rsTotal?: number;
 		echrTotal?: number;
+		cjeuTotal?: number;
 		loadingMore?: boolean;
 		facets?: SearchFacets;
 		serverFacets?: Record<string, Array<{ value: string | number; count: number }>>;
 	}
 ): SearchResult {
 	const facets = opts.serverFacets
-		? mapServerFacets(opts.serverFacets, { rsTotal: opts.rsTotal, echrTotal: opts.echrTotal })
+		? mapServerFacets(opts.serverFacets, { rsTotal: opts.rsTotal, echrTotal: opts.echrTotal, cjeuTotal: opts.cjeuTotal })
 		: (opts.facets ?? computeFacets(citations));
 	const total = opts.total ?? (query.page - 1) * query.pageSize + citations.length;
 	const totalIsExact = opts.totalIsExact ?? false;
@@ -206,6 +220,7 @@ function buildSearchResult(
 		totalIsExact,
 		rsTotal: opts.rsTotal,
 		echrTotal: opts.echrTotal,
+		cjeuTotal: opts.cjeuTotal,
 		page: query.page,
 		pageSize: query.pageSize,
 		facets,
@@ -363,6 +378,7 @@ export async function executeSearch(
 				totalIsExact,
 				rsTotal: result.rsTotal,
 				echrTotal: result.echrTotal,
+				cjeuTotal: result.cjeuTotal,
 				serverFacets: result.facets,
 			})
 		);
