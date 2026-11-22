@@ -23,12 +23,12 @@ const textExamples = reactive<ExampleItem[]>([...TEXT_EXAMPLES])
 
 const builderExamples = reactive<ExampleItem[]>([...BUILDER_EXAMPLES])
 
-const filterScope = ref<'ALL' | 'ECHR' | 'RS' | 'MIXED'>('ALL')
+const filterScope = ref<'ALL' | 'ECHR' | 'RS' | 'CJEU' | 'MIXED'>('ALL')
 const filterText = ref('')
 const expandedTextId = ref<string | null>(null)
 
 const tryLoading = reactive(new Map<string, boolean>())
-const tryResults = reactive(new Map<string, { total: number; echrTotal: number; rsTotal: number }>())
+const tryResults = reactive(new Map<string, { total: number; echrTotal: number; rsTotal: number; cjeuTotal: number }>())
 const tryErrors = reactive(new Map<string, string>())
 
 const scopeCounts = computed(() => {
@@ -37,6 +37,7 @@ const scopeCounts = computed(() => {
     total: all.length,
     echr: all.filter((ex) => ex.scope === 'ECHR').length,
     rs: all.filter((ex) => ex.scope === 'RS').length,
+    cjeu: all.filter((ex) => ex.scope === 'CJEU').length,
     mixed: all.filter((ex) => ex.scope === 'MIXED').length
   }
 })
@@ -98,6 +99,7 @@ async function tryQuery(example: ExampleItem) {
       total: result.total ?? 0,
       echrTotal: result.echrTotal ?? 0,
       rsTotal: result.rsTotal ?? 0,
+      cjeuTotal: result.cjeuTotal ?? 0,
     })
   } catch (err: unknown) {
     tryErrors.set(example.id, err instanceof Error ? err.message : 'Request failed')
@@ -199,6 +201,7 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                       <span class="rounded-lg border border-border/50 px-2 py-1">Total {{ scopeCounts.total }}</span>
                       <span class="rounded-lg border border-border/50 px-2 py-1">ECHR {{ scopeCounts.echr }}</span>
                       <span class="rounded-lg border border-border/50 px-2 py-1">Rechtspraak {{ scopeCounts.rs }}</span>
+                      <span class="rounded-lg border border-border/50 px-2 py-1">CJEU {{ scopeCounts.cjeu }}</span>
                       <span class="rounded-lg border border-border/50 px-2 py-1">Mixed {{ scopeCounts.mixed }}</span>
                     </div>
                   </div>
@@ -222,6 +225,11 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                     :class="filterScope === 'RS' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/50 text-muted-foreground hover:text-foreground'"
                     @click="filterScope = 'RS'"
                   >Rechtspraak</button>
+                  <button
+                    class="rounded-lg border px-3 py-1 text-xs transition-colors"
+                    :class="filterScope === 'CJEU' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/50 text-muted-foreground hover:text-foreground'"
+                    @click="filterScope = 'CJEU'"
+                  >CJEU</button>
                   <button
                     class="rounded-lg border px-3 py-1 text-xs transition-colors"
                     :class="filterScope === 'MIXED' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border/50 text-muted-foreground hover:text-foreground'"
@@ -320,6 +328,7 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                       <span class="font-semibold text-foreground">{{ tryResults.get(example.id)!.total }} results</span>
                       <span>ECHR: {{ tryResults.get(example.id)!.echrTotal }}</span>
                       <span>RS: {{ tryResults.get(example.id)!.rsTotal }}</span>
+                      <span>CJEU: {{ tryResults.get(example.id)!.cjeuTotal }}</span>
                       <Button variant="default" size="sm" class="h-6 ml-auto gap-1.5 rounded-lg px-3 text-[11px]" @click="testQuery(example)">
                         <ExternalLink class="h-3 w-3" />
                         View results
@@ -411,6 +420,7 @@ function updateExampleSearch(example: ExampleItem, value: string) {
                     <span class="font-semibold text-foreground">{{ tryResults.get(example.id)!.total }} results</span>
                     <span>ECHR: {{ tryResults.get(example.id)!.echrTotal }}</span>
                     <span>RS: {{ tryResults.get(example.id)!.rsTotal }}</span>
+                      <span>CJEU: {{ tryResults.get(example.id)!.cjeuTotal }}</span>
                     <Button variant="default" size="sm" class="h-6 ml-auto gap-1.5 rounded-lg px-3 text-[11px]" @click="testQuery(example)">
                       <ExternalLink class="h-3 w-3" />
                       View results

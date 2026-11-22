@@ -330,7 +330,7 @@ const builderNotGroup = makeGroup('AND', [
               <p class="text-sm text-muted-foreground">
                 Some fields exist only in one dataset. The parser uses the dataset to decide where a rule can live.
               </p>
-              <div class="grid gap-4 lg:grid-cols-2">
+              <div class="grid gap-4 lg:grid-cols-3">
                 <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
                   <div class="text-xs font-semibold text-foreground">ECHR‑only examples</div>
                   <div class="text-xs text-muted-foreground">
@@ -341,6 +341,12 @@ const builderNotGroup = makeGroup('AND', [
                   <div class="text-xs font-semibold text-foreground">Rechtspraak‑only examples</div>
                   <div class="text-xs text-muted-foreground">
                     Legal Domain, Court Instance, Articles, Selected Laws.
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-2">
+                  <div class="text-xs font-semibold text-foreground">CJEU‑only examples</div>
+                  <div class="text-xs text-muted-foreground">
+                    Subject, Referring Country, Party, Judge-Rapporteur, Advocate General, EU Law, Court, Formation.
                   </div>
                 </div>
               </div>
@@ -358,7 +364,7 @@ const builderNotGroup = makeGroup('AND', [
               <div class="grid gap-4 lg:grid-cols-3">
                 <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-1">
                   <div class="text-xs font-semibold text-foreground">Scope</div>
-                  <div class="text-xs text-muted-foreground">Any, ECHR, or Rechtspraak.</div>
+                  <div class="text-xs text-muted-foreground">Any, ECHR, Rechtspraak, or CJEU.</div>
                 </div>
                 <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-1">
                   <div class="text-xs font-semibold text-foreground">Field</div>
@@ -494,7 +500,7 @@ const builderNotGroup = makeGroup('AND', [
                   <div>Data Source: equals, contains, not equals</div>
                 </div>
               </div>
-              <div class="grid gap-4 lg:grid-cols-2">
+              <div class="grid gap-4 lg:grid-cols-3">
                 <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-3">
                   <div class="text-xs font-semibold text-foreground">ECHR-only</div>
                   <div class="text-xs text-muted-foreground space-y-1">
@@ -503,7 +509,7 @@ const builderNotGroup = makeGroup('AND', [
                     <div>Application Number: equals, contains</div>
                     <div>Document Type: equals</div>
                     <div>Importance: equals, at most</div>
-                    <div>Language: equals, not equals (ISO‑3)</div>
+                    <div>Language: equals, not equals (en, fr…)</div>
                     <div>Judgment Dates: equals, after, before (YYYY‑MM‑DD)</div>
                     <div>Decision Dates: equals, after, before (YYYY‑MM‑DD)</div>
                   </div>
@@ -516,6 +522,19 @@ const builderNotGroup = makeGroup('AND', [
                     <div>Document Type: equals</div>
                     <div>Articles: contains, equals, not contains</div>
                     <div>Selected Laws: equals, contains (BWBX…)</div>
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/40 bg-background/80 p-4 space-y-3">
+                  <div class="text-xs font-semibold text-foreground">CJEU-only</div>
+                  <div class="text-xs text-muted-foreground space-y-1">
+                    <div>Subject, Referring Country, Party: is, is not</div>
+                    <div>Judge-Rapporteur, Advocate General: is, is not</div>
+                    <div>EU Law: cites, does not cite (CELEX, e.g. 32016R0679)</div>
+                    <div>Court: is (CJEU, EGC, CST)</div>
+                    <div>Formation: is (GC, 1C, 7C…)</div>
+                    <div>Document Type: is (judgment, opinion, order…)</div>
+                    <div>Case Number, CELEX: is, contains</div>
+                    <div>Importance: is, at most</div>
                   </div>
                 </div>
               </div>
@@ -544,7 +563,7 @@ const builderNotGroup = makeGroup('AND', [
                     Normalization
                   </div>
                   <div class="text-xs text-muted-foreground">
-                    Respondent states are normalized to ISO‑3 codes. Languages must be ISO‑3 codes.
+                    Respondent states are normalized to ISO‑3 codes. Languages are two-letter codes (en, fr); older three-letter codes still work.
                     Rechtspraak legal domains are stored in Dutch and mapped from English when possible.
                   </div>
                 </div>

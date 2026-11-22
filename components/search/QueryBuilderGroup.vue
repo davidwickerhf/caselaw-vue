@@ -13,7 +13,8 @@ import {
 const SOURCE_SCOPES: { value: SourceScope; label: string }[] = [
   { value: 'ANY', label: 'Any' },
   { value: 'ECHR', label: 'ECHR' },
-  { value: 'RS', label: 'Rechtspraak' }
+  { value: 'RS', label: 'Rechtspraak' },
+  { value: 'CJEU', label: 'CJEU' }
 ]
 
 const props = defineProps<{
@@ -102,7 +103,7 @@ function onOperatorChange(group: QueryBuilderGroup, op: string) {
   group.operator = op as 'AND' | 'OR' | 'NOT'
   if (group.operator === 'AND' && hasScopeConflict(group)) {
     group.operator = prev
-    toast.error('AND groups cannot mix ECHR and Rechtspraak rules. Use OR grouping instead.', { duration: 2400 })
+    toast.error('AND groups cannot mix rules from different datasets (ECHR, Rechtspraak, CJEU). Use OR grouping instead.', { duration: 2400 })
     return
   }
   emit('change')
@@ -132,7 +133,7 @@ function enforceAndScopeConsistency(ruleId?: string, previous?: SourceScope): bo
   if (props.group.operator !== 'AND') return true
   const scopes = getGroupScopes(props.group, ruleId)
   if (scopes.length > 1) {
-    toast.error('AND groups cannot mix ECHR and Rechtspraak rules. Use OR grouping instead.', { duration: 2400 })
+    toast.error('AND groups cannot mix rules from different datasets (ECHR, Rechtspraak, CJEU). Use OR grouping instead.', { duration: 2400 })
     return false
   }
   const locked = scopes[0]
@@ -184,7 +185,7 @@ function scopeOptions(rule: QueryBuilderRule) {
       class="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive/80"
     >
       <AlertCircle class="h-3.5 w-3.5" />
-      This AND group mixes ECHR and Rechtspraak rules. Use OR grouping to combine datasets.
+      This AND group mixes rules from different datasets. Use OR grouping to combine datasets.
     </div>
 
     <!-- Rules -->

@@ -3,7 +3,9 @@ import { ref, computed } from 'vue'
 import { ChevronDown, ChevronRight, X, Filter, Search, PanelLeftClose } from 'lucide-vue-next'
 import Badge from '~/components/ui/badge/Badge.vue'
 import type { SearchFacets, SearchQuery, SourceScope } from '~/lib/types'
-import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_LABELS_ECHR, DOCUMENT_TYPE_LABELS_RS, LANGUAGE_LABELS, ORIGINATING_BODY_LABELS, RESPONDENT_STATE_LABELS } from '~/lib/utils/constants'
+import { CJEU_COURT_LABELS, CJEU_DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_LABELS_ECHR, DOCUMENT_TYPE_LABELS_RS, ORIGINATING_BODY_LABELS, RESPONDENT_STATE_LABELS, languageLabel } from '~/lib/utils/constants'
+import { ALL_DATA_SOURCES } from '~/lib/types'
+import { DATA_SOURCE_LABELS, parseDataSource, sourceBadgeVariant, sourceLabel, sourceShortLabel } from '~/lib/utils/sources'
 
 const props = defineProps<{
   facets: SearchFacets
@@ -31,7 +33,11 @@ const expandedSections = ref<Set<string>>(new Set([
   'articlesApplied',
   'articlesNonViolated',
   'instances',
-  'domains'
+  'domains',
+  'cjeuDocumentTypes',
+  'cjeuCourts',
+  'cjeuFormations',
+  'cjeuImportance'
 ]))
 
 function toggleSection(section: string) {
@@ -48,7 +54,7 @@ const activeFilters = computed(() => {
   const chips: { label: string; onremove: () => void }[] = []
   if ((props.query.sources?.length ?? 0) === 1) {
     for (const src of props.query.sources) {
-      const label = src === 'ECHR' ? 'ECHR' : src === 'RS' ? 'Rechtspraak' : src
+      const label = DATA_SOURCE_LABELS[src] || src
       chips.push({ label: `Source: ${label}`, onremove: () => emit('change', { sources: props.query.sources.filter((s) => s !== src) }) })
     }
   }
@@ -83,8 +89,20 @@ const activeFilters = computed(() => {
   for (const dom of props.query.domains) {
     chips.push({ label: dom, onremove: () => emit('change', { domains: props.query.domains.filter((d) => d !== dom) }) })
   }
+  for (const dt of props.query.cjeuDocumentType || []) {
+    chips.push({ label: `CJEU: ${CJEU_DOCUMENT_TYPE_LABELS[dt] || dt}`, onremove: () => emit('change', { cjeuDocumentType: (props.query.cjeuDocumentType || []).filter((d) => d !== dt) }) })
+  }
+  for (const court of props.query.cjeuCourt || []) {
+    chips.push({ label: CJEU_COURT_LABELS[court] || court, onremove: () => emit('change', { cjeuCourt: (props.query.cjeuCourt || []).filter((c) => c !== court) }) })
+  }
+  for (const formation of props.query.cjeuFormation || []) {
+    chips.push({ label: `Formation: ${formation}`, onremove: () => emit('change', { cjeuFormation: (props.query.cjeuFormation || []).filter((f) => f !== formation) }) })
+  }
+  for (const imp of props.query.cjeuImportance || []) {
+    chips.push({ label: `CJEU importance ${imp}`, onremove: () => emit('change', { cjeuImportance: (props.query.cjeuImportance || []).filter((i) => i !== imp) }) })
+  }
   for (const lang of props.query.language) {
-    chips.push({ label: `Language: ${lang}`, onremove: () => emit('change', { language: props.query.language.filter((l) => l !== lang) }) })
+    chips.push({ label: `Language: ${languageLabel(lang)}`, onremove: () => emit('change', { language: props.query.language.filter((l) => l !== lang) }) })
   }
   for (const ob of props.query.originatingBody) {
     chips.push({ label: `Body: ${ob}`, onremove: () => emit('change', { originatingBody: props.query.originatingBody.filter((o) => o !== ob) }) })
@@ -93,17 +111,17 @@ const activeFilters = computed(() => {
 })
 
 // Map between display names (facets) and internal DataSource values
-const SOURCE_DISPLAY_TO_INTERNAL: Record<string, string> = { 'Rechtspraak': 'RS', 'HUDOC': 'ECHR' }
-const SOURCE_INTERNAL_TO_DISPLAY: Record<string, string> = { 'RS': 'Rechtspraak', 'ECHR': 'HUDOC' }
+const SOURCE_INTERNAL_TO_DISPLAY: Record<string, string> = { 'RS': 'Rechtspraak', 'ECHR': 'HUDOC', 'CJEU': 'CJEU' }
 
 function toggleFacetValue(field: keyof SearchQuery, value: string) {
   const current = (props.query[field] as string[] | undefined) || []
   if (field === 'sources') {
-    const internal = SOURCE_DISPLAY_TO_INTERNAL[value] || value
+    const internal = parseDataSource(value)
+    if (!internal) return
     // Source filter: click = "show only this source"; click again = "show all"
     if (current.length === 1 && current[0] === internal) {
-      // Already filtering to this source, restore both
-      emit('change', { [field]: ['ECHR', 'RS'] })
+      // Already filtering to this source, restore all
+      emit('change', { [field]: [...ALL_DATA_SOURCES] })
     } else {
       // Filter to only this source
       emit('change', { [field]: [internal] })
@@ -115,6 +133,12 @@ function toggleFacetValue(field: keyof SearchQuery, value: string) {
   } else {
     emit('change', { [field]: [...current, value] })
   }
+}
+
+function toggleNumericFacet(field: keyof SearchQuery, value: number) {
+  if (field === 'importance') return toggleImportanceFacet(value)
+  const current = (props.query[field] as number[] | undefined) || []
+  emit('change', { [field]: current.includes(value) ? current.filter((v) => v !== value) : [...current, value] })
 }
 
 function toggleImportanceFacet(value: number) {
@@ -140,11 +164,11 @@ type FacetSection = {
 
 const allSections = computed<FacetSection[]>(() =>
   ([
-    { key: 'sources', label: 'Source', source: 'ANY' as SourceScope, items: props.facets.sources, field: 'sources' as keyof SearchQuery, activeValues: (props.query.sources?.length ?? 0) >= 2 ? [] : (props.query.sources || []).map((s) => SOURCE_INTERNAL_TO_DISPLAY[s] || s) },
+    { key: 'sources', label: 'Source', source: 'ANY' as SourceScope, items: props.facets.sources, field: 'sources' as keyof SearchQuery, activeValues: (props.query.sources?.length ?? 0) >= 2 ? [] : (props.query.sources || []).map((s) => SOURCE_INTERNAL_TO_DISPLAY[s] || s), formatValue: (v: string) => sourceLabel(v) },
     { key: 'echrDocumentTypes', label: 'Document Type', source: 'ECHR' as SourceScope, items: props.facets.echrDocumentTypes, field: 'echrDocumentType' as keyof SearchQuery, activeValues: props.query.echrDocumentType || [], formatValue: (v: string) => DOCUMENT_TYPE_LABELS_ECHR[v] || v },
     { key: 'rsDocumentTypes', label: 'Document Type', source: 'RS' as SourceScope, items: props.facets.rsDocumentTypes, field: 'rsDocumentType' as keyof SearchQuery, activeValues: props.query.rsDocumentType || [], formatValue: (v: string) => DOCUMENT_TYPE_LABELS_RS[v] || v },
     { key: 'years', label: 'Year', source: 'ANY' as SourceScope, items: props.facets.years.slice(0, 10), field: 'dateStart' as keyof SearchQuery, activeValues: [] },
-    { key: 'languages', label: 'Language', source: 'ECHR' as SourceScope, items: (props.facets.languages ?? []).slice(0, 15), field: 'language' as keyof SearchQuery, activeValues: props.query.language, formatValue: (v: string) => LANGUAGE_LABELS[v] || v },
+    { key: 'languages', label: 'Language', source: 'ECHR' as SourceScope, items: (props.facets.languages ?? []).slice(0, 15), field: 'language' as keyof SearchQuery, activeValues: props.query.language, formatValue: (v: string) => languageLabel(v) || v },
     { key: 'importance', label: 'Importance', source: 'ECHR' as SourceScope, items: [...props.facets.importance].sort((a, b) => Number(a.value) - Number(b.value)), field: 'importance' as keyof SearchQuery, activeValues: props.query.importance, isNumeric: true },
     { key: 'respondentStates', label: 'Respondent State', source: 'ECHR' as SourceScope, items: props.facets.respondentStates.slice(0, 15), field: 'respondentState' as keyof SearchQuery, activeValues: props.query.respondentState, formatValue: (v: string) => RESPONDENT_STATE_LABELS[v] || v },
     { key: 'originatingBodies', label: 'Originating Body', source: 'ECHR' as SourceScope, items: (props.facets.originatingBodies ?? []).slice(0, 15), field: 'originatingBody' as keyof SearchQuery, activeValues: props.query.originatingBody, formatValue: (v: string) => ORIGINATING_BODY_LABELS[v] || v },
@@ -153,6 +177,10 @@ const allSections = computed<FacetSection[]>(() =>
     { key: 'articlesNonViolated', label: 'Articles Not Violated', source: 'ECHR' as SourceScope, items: (props.facets.articlesNonViolated ?? []).slice(0, 15), field: 'articleNonViolated' as keyof SearchQuery, activeValues: props.query.articleNonViolated, formatValue: (v: string) => `Art. ${v}` },
     { key: 'instances', label: 'Court Instance', source: 'RS' as SourceScope, items: props.facets.instances.slice(0, 10), field: 'instances' as keyof SearchQuery, activeValues: props.query.instances },
     { key: 'domains', label: 'Legal Domain', source: 'RS' as SourceScope, items: props.facets.domains.slice(0, 10), field: 'domains' as keyof SearchQuery, activeValues: props.query.domains },
+    { key: 'cjeuDocumentTypes', label: 'Document Type', source: 'CJEU' as SourceScope, items: props.facets.cjeuDocumentTypes ?? [], field: 'cjeuDocumentType' as keyof SearchQuery, activeValues: props.query.cjeuDocumentType || [], formatValue: (v: string) => CJEU_DOCUMENT_TYPE_LABELS[v] || v },
+    { key: 'cjeuCourts', label: 'Court', source: 'CJEU' as SourceScope, items: props.facets.cjeuCourts ?? [], field: 'cjeuCourt' as keyof SearchQuery, activeValues: props.query.cjeuCourt || [], formatValue: (v: string) => CJEU_COURT_LABELS[v] || v },
+    { key: 'cjeuFormations', label: 'Formation', source: 'CJEU' as SourceScope, items: (props.facets.cjeuFormations ?? []).slice(0, 12), field: 'cjeuFormation' as keyof SearchQuery, activeValues: props.query.cjeuFormation || [] },
+    { key: 'cjeuImportance', label: 'Importance', source: 'CJEU' as SourceScope, items: [...(props.facets.cjeuImportance ?? [])].sort((a, b) => Number(a.value) - Number(b.value)), field: 'cjeuImportance' as keyof SearchQuery, activeValues: props.query.cjeuImportance || [], isNumeric: true },
   ] as FacetSection[]).filter((s) => s.items.length > 0)
 )
 
@@ -190,7 +218,7 @@ function isActive(section: FacetSection, itemValue: string): boolean {
 
 function formatItemValue(section: FacetSection, value: string): string {
   if (section.formatValue) return section.formatValue(value)
-  if (section.key === 'importance') return getImportanceLabel(value)
+  if (section.key === 'importance' || section.key === 'cjeuImportance') return getImportanceLabel(value)
   return value
 }
 </script>
@@ -278,10 +306,10 @@ function formatItemValue(section: FacetSection, value: string): string {
             </span>
             <Badge
               v-if="section.source !== 'ANY'"
-              :variant="section.source === 'ECHR' ? 'default' : 'secondary'"
+              :variant="sourceBadgeVariant(section.source)"
               class="text-[9px] h-3.5 px-1 font-medium"
             >
-              {{ section.source === 'ECHR' ? 'ECHR' : 'RS' }}
+              {{ sourceShortLabel(section.source) }}
             </Badge>
           </div>
           <ChevronDown v-if="expandedSections.has(section.key)" class="h-3.5 w-3.5 text-muted-foreground/60" />
@@ -293,8 +321,8 @@ function formatItemValue(section: FacetSection, value: string): string {
             :key="item.value"
             :class="['flex w-full items-center justify-between rounded px-2 py-1 text-xs hover:bg-accent transition-colors', isActive(section, item.value) ? 'bg-accent font-medium' : '']"
             @click="() => {
-              if (section.key === 'importance') {
-                toggleImportanceFacet(Number(item.value))
+              if (section.isNumeric) {
+                toggleNumericFacet(section.field, Number(item.value))
               } else if (section.key !== 'years') {
                 toggleFacetValue(section.field, item.value)
               }

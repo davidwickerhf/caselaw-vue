@@ -4,6 +4,8 @@ import { BookOpen, Star, ArrowUpRight } from "lucide-vue-next";
 import Badge from "~/components/ui/badge/Badge.vue";
 import type { Citation } from "~/lib/types";
 import { formatDate, highlightText } from "~/lib/utils/utils";
+import { CJEU_COURT_LABELS, CJEU_DOCUMENT_TYPE_LABELS } from "~/lib/utils/constants";
+import { sourceBadgeVariant, sourceLabel } from "~/lib/utils/sources";
 
 const props = defineProps<{
 	citation: Citation;
@@ -18,6 +20,19 @@ const emit = defineEmits<{
 }>();
 
 const isEchr = computed(() => props.citation.source === "HUDOC");
+const isCjeu = computed(() => props.citation.source === "CJEU");
+
+const documentTypeLabel = computed(() => {
+	const type = props.citation.document_type;
+	if (!type) return "";
+	return isCjeu.value ? CJEU_DOCUMENT_TYPE_LABELS[type] || type : type;
+});
+
+const cjeuCourt = computed(() => {
+	if (!isCjeu.value) return "";
+	const court = props.citation.court ? CJEU_COURT_LABELS[props.citation.court] || props.citation.court : "";
+	return [court, props.citation.formation].filter(Boolean).join(", ");
+});
 
 const importanceLabel = computed(() => {
 	const imp = props.citation.importance;
@@ -110,10 +125,10 @@ const citationCount = computed(
 			<!-- Top: source badge + importance + citation count -->
 			<div class="flex items-center gap-2 flex-wrap">
 				<Badge
-					:variant="isEchr ? 'default' : 'secondary'"
+					:variant="sourceBadgeVariant(citation.source)"
 					class="text-[10px] shrink-0"
 				>
-					{{ isEchr ? "ECHR" : "Rechtspraak" }}
+					{{ sourceLabel(citation.source) }}
 				</Badge>
 				<span
 					v-if="importanceLabel"
@@ -123,10 +138,10 @@ const citationCount = computed(
 					{{ importanceLabel }}
 				</span>
 				<span
-					v-if="citation.document_type"
+					v-if="documentTypeLabel"
 					class="text-[10px] text-muted-foreground/60"
 				>
-					{{ citation.document_type }}
+					{{ documentTypeLabel }}
 				</span>
 			</div>
 
@@ -152,7 +167,15 @@ const citationCount = computed(
 					<span class="text-muted-foreground/30">&middot;</span>
 					<span>{{ citation.respondent_state }}</span>
 				</template>
-				<template v-if="citation.instance && !isEchr">
+				<template v-if="cjeuCourt">
+					<span class="text-muted-foreground/30">&middot;</span>
+					<span>{{ cjeuCourt }}</span>
+				</template>
+				<template v-if="isCjeu && citation.procedure_type">
+					<span class="text-muted-foreground/30">&middot;</span>
+					<span>{{ citation.procedure_type }}</span>
+				</template>
+				<template v-if="citation.instance && !isEchr && !isCjeu">
 					<span class="text-muted-foreground/30">&middot;</span>
 					<span>{{ citation.instance }}</span>
 				</template>
@@ -202,6 +225,7 @@ const citationCount = computed(
 			<div
 				v-if="
 					!isEchr &&
+					!isCjeu &&
 					citation.legal_provisions &&
 					citation.legal_provisions.length > 0
 				"
@@ -219,6 +243,20 @@ const citationCount = computed(
 					class="text-[10px] text-muted-foreground/50 px-1 py-0.5"
 				>
 					+{{ citation.legal_provisions.length - 3 }} more
+				</span>
+			</div>
+
+			<!-- Subjects (CJEU) -->
+			<div
+				v-if="isCjeu && citation.subjects && citation.subjects.length > 0"
+				class="mt-2.5 flex flex-wrap gap-1"
+			>
+				<span
+					v-for="subject in citation.subjects.slice(0, 3)"
+					:key="subject"
+					class="text-[10px] text-muted-foreground/80 bg-muted/60 px-1.5 py-0.5 rounded"
+				>
+					{{ subject }}
 				</span>
 			</div>
 

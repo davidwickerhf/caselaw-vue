@@ -4,7 +4,8 @@ import { QUERY_BUILDER_FIELDS_BY_SCOPE, QUERY_BUILDER_OPERATORS } from '~/lib/ut
 const SCOPE_LABELS: Record<SourceScope, string> = {
     ANY: 'Any',
     ECHR: 'ECHR',
-    RS: 'Rechtspraak'
+    RS: 'Rechtspraak',
+    CJEU: 'CJEU'
 };
 
 function ruleToText(rule: { field: string; operator: string; value: string; sourceScope: SourceScope }): string {

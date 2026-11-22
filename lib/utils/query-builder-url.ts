@@ -1,6 +1,6 @@
 import type { QueryBuilderGroup, QueryBuilderRule, SourceScope, SearchQuery } from '~/lib/types';
 import { createDefaultSearchQuery } from '~/lib/types';
-import { defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
+import { QUERY_BUILDER_FIELDS_BY_SCOPE, defaultScopeForField, isFieldAllowed } from '~/lib/utils/query-builder-config';
 import { paramsToSearchQuery, searchQueryToQueryBuilderGroup } from '~/lib/utils/search-query';
 import {
     sanitizeFilterValue,
@@ -77,13 +77,9 @@ function serializeGroup(group: QueryBuilderGroup): UrlPayload {
 }
 
 /** Allowed field names (allowlist prevents sending arbitrary keys to the API). */
-const ALLOWED_FIELDS = new Set([
-    'text', 'title', 'ecli', 'keywords', 'year', 'dateStart', 'dateEnd',
-    'source', 'article_violated', 'article_applied', 'article_non_violated',
-    'respondent_state', 'application_number', 'document_type', 'echr_document_type', 'rs_document_type', 'importance',
-    'language', 'instance', 'domain', 'articles', 'selectedLaws',
-    'date_judgment_start', 'date_judgment_end', 'date_decision_start', 'date_decision_end',
-]);
+const ALLOWED_FIELDS = new Set(
+    Object.values(QUERY_BUILDER_FIELDS_BY_SCOPE).flat().map((field) => field.value)
+);
 
 /** Allowed operators. */
 const ALLOWED_OPERATORS = new Set([
@@ -92,7 +88,7 @@ const ALLOWED_OPERATORS = new Set([
 ]);
 
 /** Allowed scopes. */
-const ALLOWED_SCOPES = new Set(['ANY', 'ECHR', 'RS']);
+const ALLOWED_SCOPES = new Set(['ANY', 'ECHR', 'RS', 'CJEU']);
 
 function parseRule(raw: UrlRule): QueryBuilderRule | null {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;

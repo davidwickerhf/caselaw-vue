@@ -22,6 +22,14 @@
 				&middot;
 				<a
 					class="hover:text-foreground/80"
+					href="https://curia.europa.eu/"
+					rel="noopener noreferrer"
+					target="_blank"
+					>CURIA</a
+				>
+				&middot;
+				<a
+					class="hover:text-foreground/80"
 					href="https://www.biss-institute.com/"
 					rel="noopener noreferrer"
 					target="_blank"

@@ -163,6 +163,7 @@ const SCOPE_LABELS: Record<SourceScope, string> = {
 	ANY: "Any",
 	ECHR: "ECHR",
 	RS: "Rechtspraak",
+	CJEU: "CJEU",
 };
 
 function getRuleScope(rule: QueryBuilderGroup["rules"][number]): SourceScope {
@@ -269,6 +270,7 @@ const DOC_TYPES_ECHR = new Set([
 	"OTHER",
 ]);
 const DOC_TYPES_RS = new Set(["DEC", "OPI"]);
+const DOC_TYPES_CJEU = new Set(["judgment", "opinion", "order", "ruling", "decision", "other"]);
 const ISO3_RE = /^[A-Z]{3}$/;
 const SELECTED_LAW_RE = /^BWBX\d+\|\d+$/i;
 const SOURCE_VALUES = new Set([
@@ -276,6 +278,8 @@ const SOURCE_VALUES = new Set([
 	"RECHTSPRAAK",
 	"ECHR",
 	"HUDOC",
+	"CJEU",
+	"CURIA",
 	"ANY",
 	"BOTH",
 	"ALL",
@@ -289,6 +293,10 @@ const FILTER_KEYS: (keyof SearchQuery)[] = [
 	"documentType",
 	"echrDocumentType",
 	"rsDocumentType",
+	"cjeuDocumentType",
+	"cjeuCourt",
+	"cjeuFormation",
+	"cjeuImportance",
 	"importance",
 	"instances",
 	"domains",
@@ -318,6 +326,12 @@ function extractFilterState(query: SearchQuery): Partial<SearchQuery> {
 	if (query.respondentState.length)
 		next.respondentState = [...query.respondentState];
 	if (query.documentType.length) next.documentType = [...query.documentType];
+	if (query.echrDocumentType?.length) next.echrDocumentType = [...query.echrDocumentType];
+	if (query.rsDocumentType?.length) next.rsDocumentType = [...query.rsDocumentType];
+	if (query.cjeuDocumentType?.length) next.cjeuDocumentType = [...query.cjeuDocumentType];
+	if (query.cjeuCourt?.length) next.cjeuCourt = [...query.cjeuCourt];
+	if (query.cjeuFormation?.length) next.cjeuFormation = [...query.cjeuFormation];
+	if (query.cjeuImportance?.length) next.cjeuImportance = [...query.cjeuImportance];
 	if (query.importance.length) next.importance = [...query.importance];
 	if (query.instances.length) next.instances = [...query.instances];
 	if (query.domains.length) next.domains = [...query.domains];
@@ -417,6 +431,10 @@ function appendFilterParams(
 	setList("documentType", filters.documentType as string[] | undefined);
 	setList("echrDocumentType", filters.echrDocumentType as string[] | undefined);
 	setList("rsDocumentType", filters.rsDocumentType as string[] | undefined);
+	setList("cjeuDocumentType", filters.cjeuDocumentType);
+	setList("cjeuCourt", filters.cjeuCourt);
+	setList("cjeuFormation", filters.cjeuFormation);
+	setList("cjeuImportance", filters.cjeuImportance);
 	setList("instances", filters.instances as string[] | undefined);
 	setList("domains", filters.domains as string[] | undefined);
 	setList("importance", filters.importance as number[] | undefined);
@@ -455,6 +473,7 @@ function parseScopeInput(raw: string): { scope: SourceScope | null; label?: stri
 	if (["any", "all", "both"].includes(normalized)) return { scope: "ANY", label: SCOPE_LABELS.ANY };
 	if (["echr", "hudoc", "ehrm"].includes(normalized)) return { scope: "ECHR", label: SCOPE_LABELS.ECHR };
 	if (["rechtspraak", "rs", "rechtspraak.nl"].includes(normalized)) return { scope: "RS", label: SCOPE_LABELS.RS };
+	if (["cjeu", "curia", "eu", "eurlex"].includes(normalized)) return { scope: "CJEU", label: SCOPE_LABELS.CJEU };
 	return { scope: null };
 }
 
@@ -554,10 +573,31 @@ function validateRuleValue(
 			if (scope === "RS" && !DOC_TYPES_RS.has(valueUpper)) {
 				return { valid: false, message: "Invalid Rechtspraak document type." };
 			}
+			if (scope === "CJEU") {
+				const lower = trimmed.toLowerCase();
+				if (!DOC_TYPES_CJEU.has(lower)) {
+					return { valid: false, message: "Invalid CJEU document type." };
+				}
+				return { valid: true, normalized: lower };
+			}
 			if (scope === "ANY" && !DOC_TYPES_ECHR.has(valueUpper) && !DOC_TYPES_RS.has(valueUpper)) {
 				return { valid: false, message: "Invalid document type." };
 			}
 			return { valid: true, normalized: valueUpper };
+		}
+		case "cjeu_document_type": {
+			const lower = trimmed.toLowerCase();
+			if (!DOC_TYPES_CJEU.has(lower)) {
+				return { valid: false, message: "CJEU document type: judgment, opinion, order, ruling, decision or other." };
+			}
+			return { valid: true, normalized: lower };
+		}
+		case "court": {
+			const upper = trimmed.toUpperCase();
+			if (!["CJEU", "EGC", "CST"].includes(upper)) {
+				return { valid: false, message: "Court must be CJEU, EGC or CST." };
+			}
+			return { valid: true, normalized: upper };
 		}
 		case "instance": {
 			const normalized = trimmed.toLowerCase();
@@ -590,9 +630,12 @@ function validateRuleValue(
 			return { valid: true, normalized: trimmed };
 		}
 		case "language": {
+			if (/^[a-z]{2}$/i.test(trimmed)) {
+				return { valid: true, normalized: trimmed.toLowerCase() };
+			}
 			const code = trimmed.toUpperCase();
 			if (!ISO3_RE.test(code)) {
-				return { valid: false, message: "Language must be an ISO-3 code." };
+				return { valid: false, message: "Language must be a 2- or 3-letter code (en, ENG)." };
 			}
 			return { valid: true, normalized: code };
 		}
@@ -1689,6 +1732,7 @@ function handleFindSimilar(citation: Citation) {
 										:total-is-exact="store.results.value.totalIsExact"
 										:rs-total="store.results.value.rsTotal"
 										:echr-total="store.results.value.echrTotal"
+										:cjeu-total="store.results.value.cjeuTotal"
 										:has-more="!!store.results.value.nextCursor"
 										:loading-more="store.results.value.loadingMore"
 										:ai-summary="store.results.value.aiSummary"

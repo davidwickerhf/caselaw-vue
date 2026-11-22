@@ -11,6 +11,7 @@ import AppHeader from "~/components/shared/AppHeader.vue";
 import Tooltip from "~/components/ui/tooltip/Tooltip.vue";
 import Badge from "~/components/ui/badge/Badge.vue";
 import type { Citation } from "~/lib/types";
+import { sourceLabel, sourceShortLabel, sourceBadgeVariant } from "~/lib/utils/sources";
 import { fetchDocumentByEcli } from "~/lib/api/client";
 
 const CitationGraph = defineAsyncComponent(() =>
@@ -172,10 +173,10 @@ useHead({
 				<!-- Current document info -->
 				<div v-if="citation" class="flex items-center gap-2 flex-1 min-w-0">
 					<Badge
-						:variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
+						:variant="sourceBadgeVariant(citation.source)"
 						class="text-[10px] h-4.5 px-1.5 shrink-0"
 					>
-						{{ citation.source === "HUDOC" ? "ECHR" : "Rechtspraak" }}
+						{{ sourceLabel(citation.source) }}
 					</Badge>
 					<span class="text-xs font-medium text-foreground truncate">
 						{{ citation.title || citation.ecli }}

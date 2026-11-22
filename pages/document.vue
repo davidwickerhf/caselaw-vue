@@ -61,6 +61,8 @@ import Badge from "~/components/ui/badge/Badge.vue";
 import Button from "~/components/ui/button/Button.vue";
 import type { Citation } from "~/lib/types";
 import { formatDate } from "~/lib/utils/utils";
+import { languageLabel, CJEU_COURT_LABELS, CJEU_DOCUMENT_TYPE_LABELS } from "~/lib/utils/constants";
+import { sourceLabel, sourceShortLabel, sourceBadgeVariant, datasetForSource } from "~/lib/utils/sources";
 import {
 	fetchDocumentByEcli,
 	fetchDocumentFullText,
@@ -265,7 +267,7 @@ const expandedCommentLines = ref<Set<number>>(new Set());
 
 // For ECHR documents, scope inline annotations to the active language version
 const annotationLanguageCode = computed(() =>
-	citation.value?.source === "HUDOC" ? selectedLanguage.value ?? undefined : undefined,
+	citation.value && citation.value.source !== "Rechtspraak" ? selectedLanguage.value ?? undefined : undefined,
 );
 
 // Computed for current document (scoped by language for ECHR)
@@ -814,35 +816,8 @@ const citedByDocsList = computed(() => {
 
 const fullTextContent = computed(() => fetchedFullText.value || "");
 
-const LANGUAGE_LABELS: Record<string, string> = {
-	ENG: "English",
-	FRE: "French",
-	GER: "German",
-	ITA: "Italian",
-	SPA: "Spanish",
-	RUS: "Russian",
-	TUR: "Turkish",
-	DUT: "Dutch",
-	ROM: "Romanian",
-	GRE: "Greek",
-	POL: "Polish",
-	HUN: "Hungarian",
-	BUL: "Bulgarian",
-	CZE: "Czech",
-	POR: "Portuguese",
-	SWE: "Swedish",
-	FIN: "Finnish",
-	NOR: "Norwegian",
-	EST: "Estonian",
-	LAV: "Latvian",
-	LIT: "Lithuanian",
-	SLO: "Slovak",
-	SLV: "Slovenian",
-	ALB: "Albanian",
-};
-
 function getLanguageLabel(code: string) {
-	return LANGUAGE_LABELS[code] || code;
+	return languageLabel(code) || code;
 }
 
 // Metadata items
@@ -864,17 +839,32 @@ const metadataItems = computed(() => {
 			value: c.respondent_state,
 			icon: MapPin,
 		});
+	const isCjeuDoc = c.source === "CJEU";
 	if (c.document_type)
 		items.push({
 			label: "Document Type",
-			value: c.document_type,
+			value: isCjeuDoc ? CJEU_DOCUMENT_TYPE_LABELS[c.document_type] || c.document_type : c.document_type,
 			icon: FileText,
 		});
-	if (c.instance)
-		items.push({ label: "Court Instance", value: c.instance, icon: Scale });
-	if (c.domain) items.push({ label: "Domain", value: c.domain, icon: Tag });
+	if (isCjeuDoc) {
+		if (c.case_number) items.push({ label: "Case Number", value: c.case_number, icon: Hash });
+		if (c.celex) items.push({ label: "CELEX", value: c.celex, icon: Hash });
+		if (c.court) items.push({ label: "Court", value: CJEU_COURT_LABELS[c.court] || c.court, icon: Scale });
+		if (c.formation) items.push({ label: "Formation", value: c.formation, icon: Scale });
+		if (c.date_lodged) items.push({ label: "Lodged", value: formatDate(c.date_lodged), icon: Calendar });
+		if (c.countries?.length) items.push({ label: "Referring Country", value: c.countries.join(", "), icon: MapPin });
+		if (c.judge_rapporteur) items.push({ label: "Judge-Rapporteur", value: c.judge_rapporteur, icon: Gavel });
+		if (c.advocate_general) items.push({ label: "Advocate General", value: c.advocate_general, icon: Gavel });
+		if (c.subjects?.length) items.push({ label: "Subjects", value: c.subjects.join(", "), icon: Tag });
+		if (c.parties?.length) items.push({ label: "Parties", value: c.parties.join(", "), icon: Scale });
+		if (c.eu_law?.length) items.push({ label: "EU Law Cited", value: c.eu_law.map((l) => l.title ? `${l.celex} (${l.title})` : l.celex).join("; "), icon: FileText });
+	} else {
+		if (c.instance)
+			items.push({ label: "Court Instance", value: c.instance, icon: Scale });
+		if (c.domain) items.push({ label: "Domain", value: c.domain, icon: Tag });
+	}
 	if (c.languages && c.languages.length > 0)
-		items.push({ label: "Languages", value: c.languages.join(', '), icon: Globe });
+		items.push({ label: "Languages", value: c.languages.map((l) => getLanguageLabel(l)).join(', '), icon: Globe });
 	if (c.originating_body)
 		items.push({
 			label: "Originating Body",
@@ -1520,7 +1510,7 @@ async function loadFullText() {
 	try {
 		const result = await fetchDocumentFullText(
 			citation.value.ecli,
-			citation.value.source as "HUDOC" | "Rechtspraak",
+			citation.value.source,
 			{ signal: fullTextAbort.signal },
 		);
 		if (result.error) fullTextError.value = result.error;
@@ -1850,10 +1840,10 @@ useHead({
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2 mb-0.5">
 										<Badge
-											:variant="citation.source === 'HUDOC' ? 'default' : 'secondary'"
+											:variant="sourceBadgeVariant(citation.source)"
 											class="text-[10px] h-4.5 px-1.5 shrink-0"
 										>
-											{{ citation.source === "HUDOC" ? "ECHR" : "Rechtspraak" }}
+											{{ sourceLabel(citation.source) }}
 										</Badge>
 										<span
 											v-if="importanceLabel"
@@ -3050,10 +3040,10 @@ useHead({
 									>
 										<Badge
 											:variant="
-												doc.source === 'HUDOC' ? 'default' : 'secondary'
+												sourceBadgeVariant(doc.source)
 											"
 											class="text-[10px] mt-0.5 shrink-0"
-											>{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}</Badge
+											>{{ sourceShortLabel(doc.source) }}</Badge
 										>
 										<div class="min-w-0 flex-1">
 											<div class="text-xs font-medium text-foreground truncate">
@@ -3116,10 +3106,10 @@ useHead({
 									>
 										<Badge
 											:variant="
-												doc.source === 'HUDOC' ? 'default' : 'secondary'
+												sourceBadgeVariant(doc.source)
 											"
 											class="text-[10px] mt-0.5 shrink-0"
-											>{{ doc.source === "HUDOC" ? "ECHR" : "RS" }}</Badge
+											>{{ sourceShortLabel(doc.source) }}</Badge
 										>
 										<div class="min-w-0 flex-1">
 											<div class="text-xs font-medium text-foreground truncate">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Button from '~/components/ui/button/Button.vue'
-import { DataSource } from '~/lib/types'
+import { ALL_DATA_SOURCES, DataSource } from '~/lib/types'
+import { DATA_SOURCE_LABELS } from '~/lib/utils/sources'
 
 const props = defineProps<{
   selected: DataSource[]
@@ -10,25 +11,18 @@ const emit = defineEmits<{
   change: [sources: DataSource[]]
 }>()
 
-function toggle(source: DataSource) {
-  if (props.selected.includes(source)) {
-    if (props.selected.length > 1) {
-      emit('change', props.selected.filter((s) => s !== source))
-    }
-  } else {
-    emit('change', [...props.selected, source])
-  }
-}
+const isAll = () => ALL_DATA_SOURCES.every((s) => props.selected.includes(s))
+const isOnly = (source: DataSource) => props.selected.length === 1 && props.selected[0] === source
 
 function selectAll() {
-  emit('change', [DataSource.ECHR, DataSource.RS])
+  emit('change', [...ALL_DATA_SOURCES])
 }
 </script>
 
 <template>
-  <div class="flex items-center gap-1.5">
+  <div class="flex items-center gap-1.5 flex-wrap">
     <Button
-      :variant="selected.includes(DataSource.ECHR) && selected.includes(DataSource.RS) ? 'default' : 'outline'"
+      :variant="isAll() ? 'default' : 'outline'"
       size="sm"
       class="h-8 text-xs"
       @click="selectAll"
@@ -36,20 +30,14 @@ function selectAll() {
       All Sources
     </Button>
     <Button
-      :variant="selected.includes(DataSource.ECHR) && !selected.includes(DataSource.RS) ? 'default' : 'outline'"
+      v-for="source in ALL_DATA_SOURCES"
+      :key="source"
+      :variant="isOnly(source) ? 'default' : 'outline'"
       size="sm"
       class="h-8 text-xs"
-      @click="emit('change', [DataSource.ECHR])"
+      @click="emit('change', [source])"
     >
-      ECHR
-    </Button>
-    <Button
-      :variant="selected.includes(DataSource.RS) && !selected.includes(DataSource.ECHR) ? 'default' : 'outline'"
-      size="sm"
-      class="h-8 text-xs"
-      @click="emit('change', [DataSource.RS])"
-    >
-      Rechtspraak
+      {{ DATA_SOURCE_LABELS[source] }}
     </Button>
   </div>
 </template>

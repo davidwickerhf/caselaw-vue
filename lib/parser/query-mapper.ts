@@ -100,6 +100,7 @@ export function tokensToSearchQuery(
             case 'source':
                 if (token.value === 'ECHR') sources.push(DataSource.ECHR);
                 else if (token.value === 'RS') sources.push(DataSource.RS);
+                else if (token.value === 'CJEU') sources.push(DataSource.CJEU);
                 break;
             case 'keyword':
                 keywordTerms.push(token.value);

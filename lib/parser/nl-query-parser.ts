@@ -85,6 +85,24 @@ function maskScopeLabels(input: string): string {
     return input.replace(EXPLICIT_SCOPE_LABEL_RE, (match) => ' '.repeat(match.length));
 }
 
+const FILLER_WORDS = new Set([
+    'a', 'an', 'the', 'of', 'from', 'in', 'at', 'by', 'on', 'for', 'about', 'and', 'with',
+    'case', 'cases', 'judgment', 'judgments', 'decision', 'decisions', 'ruling', 'rulings',
+    'show', 'find', 'search', 'me', 'all',
+    'van', 'de', 'het', 'een', 'uit', 'bij', 'zaken', 'uitspraken',
+]);
+
+/** Leftover words with connectors and generic nouns ("cases from the") removed. */
+function stripFillerWords(text: string): string {
+    const words = normalizeWhitespace(text).split(' ').filter(Boolean);
+    // Connectors and negations at the edges already became query structure.
+    const isFiller = (word: string) => FILLER_WORDS.has(word.toLowerCase())
+        || [NEGATION_WORD_RE, OR_WORD_RE, AND_WORD_RE].some((re) => word.match(re)?.[0] === word);
+    while (words.length && isFiller(words[0])) words.shift();
+    while (words.length && isFiller(words[words.length - 1])) words.pop();
+    return words.join(' ');
+}
+
 function removeSpans(input: string, spans: [number, number][]): string {
     const sorted = [...spans].sort((a, b) => b[0] - a[0]);
     let result = input;
@@ -331,6 +349,7 @@ function scopeFromSourceRule(rule: QueryBuilderRule): SourceScope | null {
     const upper = rule.value.toUpperCase();
     if (upper === 'ECHR' || upper === 'HUDOC') return 'ECHR';
     if (upper === 'RS' || upper === 'RECHTSPRAAK') return 'RS';
+    if (upper === 'CJEU' || upper === 'CURIA') return 'CJEU';
     return null;
 }
 
@@ -587,6 +606,28 @@ export function parseNaturalLanguageToQueryBuilderGroup(input: string): QueryBui
             }
         } else {
             root.rules.push(...segmentRules);
+        }
+    }
+
+    // "airline court of justice": the source is the only thing recognised, so
+    // the rest is what to search for. Without this the words were dropped and
+    // the query became "every case in that corpus".
+    const onlySourceRules = root.groups.length === 0
+        && root.rules.length > 0
+        && root.rules.every((rule) => rule.field === 'source');
+    if (onlySourceRules) {
+        const leftover = stripFillerWords(removeSpans(input, spans));
+        if (leftover) {
+            // "airline cjeu or echr" is airline AND (CJEU or ECHR). OR-ing the
+            // text in would match both corpora whole, so exclude the others.
+            if (root.operator === 'OR' && root.rules.every((rule) => rule.operator === 'equals')) {
+                const wanted = new Set(root.rules.map((rule) => rule.value));
+                root.operator = 'AND';
+                root.rules = ['RS', 'ECHR', 'CJEU']
+                    .filter((source) => !wanted.has(source))
+                    .map((value) => ({ id: genId(), field: 'source', operator: 'not_equals', value, sourceScope: 'ANY' as const }));
+            }
+            root.rules.push({ id: genId(), field: 'text', operator: 'contains', value: leftover, sourceScope: 'ANY' });
         }
     }
 

@@ -538,3 +538,44 @@ export const ORIGINATING_BODY_LABELS: Record<string, string> = {
     'COMMISSION': 'Commission',
     'MINISTRY': 'Ministry'
 };
+
+/**
+ * Human label for a language code. The API now returns ISO 639-1 codes
+ * ("en", "fr"); older data, saved annotations and URLs use HUDOC's
+ * three-letter codes ("ENG", "FRE").
+ */
+export function languageLabel(code: string | undefined | null): string {
+    const raw = String(code || '').trim();
+    if (!raw) return '';
+    const upper = raw.toUpperCase();
+    if (LANGUAGE_LABELS[upper]) return LANGUAGE_LABELS[upper];
+    if (/^[a-z]{2}$/i.test(raw)) {
+        try {
+            const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(raw.toLowerCase());
+            if (name && name.toLowerCase() !== raw.toLowerCase()) return name;
+        } catch {
+            // Intl.DisplayNames unavailable: fall through to the code itself.
+        }
+    }
+    return upper;
+}
+
+export const CJEU_DOCUMENT_TYPE_LABELS: Record<string, string> = {
+    judgment: 'Judgment',
+    opinion: 'AG Opinion',
+    order: 'Order',
+    ruling: 'Ruling',
+    decision: 'Decision',
+    other: 'Other',
+};
+
+export const CJEU_COURT_LABELS: Record<string, string> = {
+    CJEU: 'Court of Justice',
+    EGC: 'General Court',
+    CST: 'Civil Service Tribunal',
+};
+
+export const CJEU_SECTOR_LABELS: Record<string, string> = {
+    '6': 'Case law',
+    '8': 'National case law',
+};

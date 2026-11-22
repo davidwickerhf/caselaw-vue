@@ -10,9 +10,17 @@ requires a bearer token. Configure these (see `.env.example`):
 - `NUXT_API_BACKEND_URL` — backend API base URL (defaults to the production API).
 - `NUXT_API_BEARER_TOKEN` — bearer token for the backend (server-only; the proxy
   adds the `Authorization: Bearer …` header, so set the raw token without a prefix).
+  It is a service key (`mcit_live_v2_…`) minted in the Caselaw Access console:
+  <https://access.caselawexplorer.tech> → Citations API → Service keys → Mint key.
+  The secret is shown once; give each deployment its own key so it can be revoked
+  on its own.
 
-On Vercel, set `NUXT_API_BEARER_TOKEN` for the Production environment and redeploy —
-env-var changes only apply to new deployments.
+Env-var changes only apply after a redeploy.
+
+The app searches Rechtspraak, ECHR and CJEU through `POST /api/combined`. The CJEU
+metadata fields in the query builder (subject, referring country, party,
+judge-rapporteur, Advocate General, EU law) need a citations-api that accepts them
+on the combined endpoint (MaastrichtU-BISS/citations-api#56).
 
 ## Setup
 
