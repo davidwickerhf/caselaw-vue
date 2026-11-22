@@ -95,8 +95,11 @@ const FILLER_WORDS = new Set([
 /** Leftover words with connectors and generic nouns ("cases from the") removed. */
 function stripFillerWords(text: string): string {
     const words = normalizeWhitespace(text).split(' ').filter(Boolean);
-    while (words.length && FILLER_WORDS.has(words[0].toLowerCase())) words.shift();
-    while (words.length && FILLER_WORDS.has(words[words.length - 1].toLowerCase())) words.pop();
+    // Connectors and negations at the edges already became query structure.
+    const isFiller = (word: string) => FILLER_WORDS.has(word.toLowerCase())
+        || [NEGATION_WORD_RE, OR_WORD_RE, AND_WORD_RE].some((re) => word.match(re)?.[0] === word);
+    while (words.length && isFiller(words[0])) words.shift();
+    while (words.length && isFiller(words[words.length - 1])) words.pop();
     return words.join(' ');
 }
 
@@ -615,6 +618,15 @@ export function parseNaturalLanguageToQueryBuilderGroup(input: string): QueryBui
     if (onlySourceRules) {
         const leftover = stripFillerWords(removeSpans(input, spans));
         if (leftover) {
+            // "airline cjeu or echr" is airline AND (CJEU or ECHR). OR-ing the
+            // text in would match both corpora whole, so exclude the others.
+            if (root.operator === 'OR' && root.rules.every((rule) => rule.operator === 'equals')) {
+                const wanted = new Set(root.rules.map((rule) => rule.value));
+                root.operator = 'AND';
+                root.rules = ['RS', 'ECHR', 'CJEU']
+                    .filter((source) => !wanted.has(source))
+                    .map((value) => ({ id: genId(), field: 'source', operator: 'not_equals', value, sourceScope: 'ANY' as const }));
+            }
             root.rules.push({ id: genId(), field: 'text', operator: 'contains', value: leftover, sourceScope: 'ANY' });
         }
     }

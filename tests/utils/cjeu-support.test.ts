@@ -4,6 +4,8 @@ import { buildCombinedPayload, transformApiNode } from '../../lib/api/client';
 import { searchQueryToQueryBuilderGroup, queryBuilderGroupToSearchQuery, paramsToSearchQuery } from '../../lib/utils/search-query';
 import { datasetFromEcli, parseDataSource, sourceLabel } from '../../lib/utils/sources';
 import { languageLabel } from '../../lib/utils/constants';
+import { QUERY_BUILDER_FIELDS_BY_SCOPE } from '../../lib/utils/query-builder-config';
+import { paramsToQueryBuilderState, queryBuilderGroupToParams } from '../../lib/utils/query-builder-url';
 import { mapServerFacets } from '../../lib/utils/search-engine';
 import { parseNaturalLanguageToQueryBuilderGroup } from '../../lib/parser/nl-query-parser';
 
@@ -130,5 +132,29 @@ describe('CJEU support', () => {
     }
     const phrase = parseNaturalLanguageToQueryBuilderGroup('data protection cases from the european court of justice');
     expect(phrase.rules.find((r) => r.field === 'text')?.value).toBe('data protection');
+  });
+
+  it('keeps every query builder field through a shared URL', () => {
+    for (const [sourceScope, fields] of Object.entries(QUERY_BUILDER_FIELDS_BY_SCOPE)) {
+      for (const { value: field } of fields) {
+        const rule = { id: 'r', field, operator: 'equals', value: '1', sourceScope: sourceScope as 'CJEU' };
+        const { state } = paramsToQueryBuilderState(queryBuilderGroupToParams(group([rule])));
+        expect(state?.group.rules.map((r) => [r.field, r.value, r.sourceScope])).toEqual([[field, '1', sourceScope]]);
+      }
+    }
+  });
+
+  it('does not search for connectors and negations next to a source', () => {
+    for (const input of ['not echr', 'niet echr', 'echr or rechtspraak']) {
+      const built = parseNaturalLanguageToQueryBuilderGroup(input);
+      expect(built.rules.filter((r) => r.field === 'text')).toEqual([]);
+    }
+  });
+
+  it('applies leftover words to each of several alternative sources', () => {
+    const built = parseNaturalLanguageToQueryBuilderGroup('airline cjeu or echr');
+    expect(built.operator).toBe('AND');
+    expect(built.rules.map((r) => [r.field, r.operator, r.value]))
+      .toEqual([['source', 'not_equals', 'RS'], ['text', 'contains', 'airline']]);
   });
 });
